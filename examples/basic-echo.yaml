@@ -1,0 +1,25 @@
+# Basic replay configuration
+# Reads from local directory, outputs to local directory
+
+echo:
+  delta_factor: 1.0  # Preserve original time deltas
+  base_time: auto    # Auto-detect base time
+  target_time: now   # Replay to current time
+  prevent_future: true
+
+input:
+  source:
+    type: local
+    path: ./sample-data
+    pattern: "*.jsonl"
+  format: jsonl
+  schema: raw  # No schema, generic timestamp detection
+
+output:
+  destination:
+    type: local
+    path: ./output
+    path_template: "replayed/{filename}"
+  format: jsonl
+  compression: null
+  batch_size: 1000

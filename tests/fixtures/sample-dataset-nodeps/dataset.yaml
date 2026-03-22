@@ -1,0 +1,20 @@
+metadata:
+  name: "test-dataset-nodeps"
+  version: "1.0.0"
+  description: "Test dataset without dependencies"
+  author: "test@example.com"
+  created: "2025-01-15"
+  tags:
+    - test
+
+files:
+  bundled:
+    - path: "logs/test.jsonl"
+      description: "Test logs"
+      format: "jsonl"
+      event_count: 10
+
+defaults:
+  echo:
+    delta_factor: 1.0
+  schema_type: "raw"

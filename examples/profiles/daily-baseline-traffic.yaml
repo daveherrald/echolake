@@ -1,0 +1,51 @@
+# Replay Profile: Daily Baseline Traffic
+#
+# Purpose: Generate baseline "normal" traffic for machine learning training
+# Multiple data sources to create realistic baseline activity patterns
+
+profile:
+  name: "daily-baseline-traffic"
+  version: "1.0.0"
+  description: "Normal user activity baseline for ML/analytics training"
+  author: "data-science@company.com"
+  tags:
+    - baseline
+    - benign
+    - ml-training
+    - daily
+
+datasets:
+  # Authentication activity
+  - ref: "local:datasets/windows-security-successful-logins"
+    version: "*"
+    description: "Normal user authentication patterns"
+    schema: "raw"  # Override global schema per dataset
+
+  # Network traffic
+  - ref: "local:datasets/baseline-network-traffic"
+    version: ">=1.0.0"
+    description: "Normal network communications"
+
+  # DNS queries
+  - ref: "local:datasets/baseline-dns-queries"
+    version: "*"
+    description: "Normal DNS resolution patterns"
+
+  # File activity
+  - ref: "local:datasets/baseline-file-operations"
+    version: "*"
+    description: "Normal file access and modifications"
+
+  # Process creation
+  - ref: "local:datasets/baseline-process-activity"
+    version: "*"
+    description: "Normal process creation patterns"
+
+# Real-time replay (no compression)
+echo:
+  delta_factor: 1.0      # No time compression
+  base_time: "earliest"
+  target_time: "now"     # Replay to current time
+  prevent_future: false  # Allow slight future timestamps for real-time feel
+
+schema: "raw"  # Default, can override per dataset

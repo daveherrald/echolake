@@ -1,0 +1,72 @@
+# Ransomware Incident Simulation
+#
+# Simulates a complete ransomware attack from initial access to encryption.
+# Compresses 3 days of activity into 30 minutes for rapid testing.
+#
+# Usage:
+#   echolake echo-profile ransomware-incident --destination chronicle-prod
+#   echolake echo-profile ransomware-incident --destination local-dev --dry-run
+
+profile:
+  name: "ransomware-incident"
+  version: "1.0.0"
+  description: "Complete ransomware attack lifecycle (3 days → 30 minutes)"
+  author: "security-team@example.com"
+  tags:
+    - ransomware
+    - incident-response
+    - training
+    - t1486
+
+datasets:
+  # Stage 1: Initial Access (T1566 - Phishing)
+  - ref: "local:meta-datasets/phishing-attack"
+    description: "Phishing email with malicious attachment"
+
+  # Stage 2: Execution (T1204 - User Execution)
+  - ref: "local:meta-datasets/malicious-macro-execution"
+    description: "User opens malicious Office document"
+
+  # Stage 3: Persistence (T1547 - Boot/Logon Autostart)
+  - ref: "local:meta-datasets/registry-persistence"
+    description: "Malware establishes persistence"
+
+  # Stage 4: Privilege Escalation (T1068 - Exploitation for Privilege Escalation)
+  - ref: "local:meta-datasets/privilege-escalation"
+    description: "Escalate to SYSTEM privileges"
+
+  # Stage 5: Defense Evasion (T1562 - Impair Defenses)
+  - ref: "local:meta-datasets/disable-av"
+    description: "Disable antivirus and monitoring"
+
+  # Stage 6: Credential Access (T1003 - OS Credential Dumping)
+  - ref: "local:meta-datasets/credential-dumping-t1003"
+    description: "Dump credentials from LSASS"
+
+  # Stage 7: Discovery (T1083 - File and Directory Discovery)
+  - ref: "local:meta-datasets/file-discovery"
+    description: "Enumerate files and directories"
+
+  # Stage 8: Lateral Movement (T1021 - Remote Services)
+  - ref: "local:meta-datasets/lateral-movement-suite"
+    description: "Spread to other systems via SMB/RDP"
+
+  # Stage 9: Impact (T1486 - Data Encrypted for Impact)
+  - ref: "local:meta-datasets/ransomware-encryption"
+    description: "Encrypt files and display ransom note"
+
+# Compress 3 days (72 hours) into 30 minutes
+echo:
+  delta_factor: 0.00694  # 72 hours / 0.5 hours = 144, so 1/144 = 0.00694
+  base_time: "earliest"
+  target_time: "now-30m"
+  prevent_future: true
+
+# Schema for SIEM compatibility
+schema: "raw"
+
+defaults:
+  # Additional metadata
+  scenario_type: "ransomware_simulation"
+  severity: "critical"
+  training_exercise: true

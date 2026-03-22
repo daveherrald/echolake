@@ -1,0 +1,71 @@
+metadata:
+  name: "aws-cloudtrail-iam-privilege-escalation"
+  version: "1.0.0"
+  description: "AWS CloudTrail logs showing IAM privilege escalation via policy manipulation"
+  author: "cloud-security@example.com"
+  created: "2025-01-28"
+  tags:
+    - aws
+    - cloudtrail
+    - iam
+    - privilege-escalation
+
+  mitre_attack:
+    techniques:
+      - id: "T1078.004"
+        name: "Cloud Accounts"
+        tactics: ["defense-evasion", "persistence", "privilege-escalation", "initial-access"]
+    tactics:
+      - "privilege-escalation"
+      - "persistence"
+
+files:
+  references:
+    - uri: "s3://security-datasets/aws/cloudtrail-iam-escalation.jsonl"
+      description: "CloudTrail management events showing IAM policy changes"
+      format: "jsonl"
+      schema: "raw"
+      checksum: "sha256:a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
+
+      # Vendor-neutral classification
+      log_source:
+        vendor: "AWS"
+        product: "CloudTrail"
+        category: "Management Events"
+        subcategory: "IAM"
+
+      # Platform-specific metadata
+      platforms:
+        chronicle:
+          logtype: "AWS_CLOUDTRAIL"
+
+        elastic:
+          index: "filebeat-aws"
+          data_stream:
+            type: "logs"
+            dataset: "aws.cloudtrail"
+            namespace: "production"
+
+        sentinel:
+          table: "AWSCloudTrail"
+          workspace_id: "production"
+
+        qradar:
+          log_source_type: "Amazon AWS CloudTrail"
+
+        sumo_logic:
+          source_category: "aws/cloudtrail"
+          source_name: "cloudtrail-iam"
+
+        # Custom/proprietary platform example
+        custom_siem:
+          data_type: "cloud_audit"
+          category: "iam_changes"
+          severity: "high"
+
+defaults:
+  echo:
+    delta_factor: 1.0
+    base_time: "earliest"
+    target_time: "now-2h"
+  schema: "raw"

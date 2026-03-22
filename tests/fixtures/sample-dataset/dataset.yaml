@@ -1,0 +1,53 @@
+metadata:
+  name: "test-dataset"
+  version: "1.0.0"
+  description: "Test dataset for unit tests"
+  author: "test@example.com"
+  created: "2025-01-15"
+  updated: "2025-01-20"
+  license: "MIT"
+  tags:
+    - test
+    - authentication
+
+  mitre_attack:
+    techniques:
+      - id: "T1078"
+        name: "Valid Accounts"
+        tactics:
+          - "persistence"
+          - "privilege-escalation"
+    tactics:
+      - "initial-access"
+
+files:
+  bundled:
+    - path: "logs/auth.jsonl"
+      description: "Authentication logs"
+      format: "jsonl"
+      schema: "lakehouse_bronze"
+      event_count: 100
+
+    - path: "logs/network.jsonl"
+      description: "Network logs"
+      format: "jsonl"
+      event_count: 50
+
+  references:
+    - uri: "s3://test-bucket/common/dns.jsonl"
+      description: "DNS query logs"
+      format: "jsonl"
+      schema: "lakehouse_bronze"
+      checksum: "sha256:abc123def456"
+
+dependencies:
+  - dataset: "common/baseline"
+    version: ">=1.0.0"
+    description: "Baseline network traffic"
+
+defaults:
+  replay:
+    delta_factor: 1.0
+    base_time: "earliest"
+    target_time: "now-1h"
+  schema: "lakehouse_bronze"

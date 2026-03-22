@@ -1,0 +1,33 @@
+# Bronze schema echo configuration
+# Reads from GCS, outputs to S3 with timestamp expansion
+
+echo:
+  delta_factor: 2.0  # Expand time deltas by 2x (spread events out)
+  base_time: earliest
+  target_time: now
+  prevent_future: true
+  ceiling_time: now
+
+input:
+  source:
+    type: gcs
+    bucket: my-security-logs
+    prefix: security/bronze/
+    pattern: "*.jsonl"
+  format: jsonl
+  schema: lakehouse_bronze
+  timestamp_patterns:
+    - field: _event_time
+      format: iso8601
+      is_base: true
+    - field: _ingest_time
+      format: iso8601
+
+output:
+  destination:
+    type: s3
+    bucket: replayed-logs
+    path_template: "bronze/{year}/{month}/{day}/{filename}"
+  format: jsonl
+  compression: gzip
+  batch_size: 5000

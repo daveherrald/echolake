@@ -1,0 +1,67 @@
+metadata:
+  name: "windows-sysmon-process-creation"
+  version: "1.0.0"
+  description: "Windows Sysmon process creation events showing suspicious PowerShell execution"
+  author: "security-team@example.com"
+  created: "2025-01-28"
+  tags:
+    - windows
+    - sysmon
+    - process-creation
+    - powershell
+
+  mitre_attack:
+    techniques:
+      - id: "T1059.001"
+        name: "PowerShell"
+        tactics: ["execution"]
+    tactics:
+      - "execution"
+
+files:
+  bundled:
+    - path: "logs/sysmon-process-creation.jsonl"
+      description: "Sysmon Event ID 1 - Process Creation"
+      format: "jsonl"
+      schema: "raw"
+      event_count: 250
+
+      # Vendor-neutral classification
+      log_source:
+        vendor: "Microsoft"
+        product: "Windows"
+        category: "Sysmon"
+        subcategory: "Process Creation"
+        event_ids: [1]
+
+      # Platform-specific metadata (fully extensible)
+      platforms:
+        chronicle:
+          logtype: "WINDOWS_SYSMON"
+          namespace: "windows"
+
+        elastic:
+          index: "winlogbeat-sysmon"
+          data_stream:
+            type: "logs"
+            dataset: "windows.sysmon"
+            namespace: "default"
+
+        sentinel:
+          table: "Sysmon"
+          workspace_id: "default"
+
+        qradar:
+          log_source_type: "Microsoft Windows Security Event Log - Sysmon"
+          log_source_identifier: "Sysmon"
+
+        sumo_logic:
+          source_category: "windows/sysmon"
+          source_name: "sysmon-process-creation"
+
+defaults:
+  echo:
+    delta_factor: 1.0
+    base_time: "earliest"
+    target_time: "now-1h"
+  schema: "raw"

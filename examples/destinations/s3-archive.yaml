@@ -1,0 +1,38 @@
+# Destination: S3 Archive
+#
+# AWS S3 bucket for archiving replayed data
+# Uses AWS credentials from environment or IAM role
+
+destination:
+  name: "s3-archive"
+  description: "S3 bucket for long-term storage of replayed datasets"
+  tags:
+    - s3
+    - archive
+    - storage
+    - aws
+
+type: "s3"
+
+connection:
+  # S3 bucket details
+  bucket: "security-datasets-archive"
+  prefix: "replays/{profile}/{date}/"  # Template variables: {profile}, {date}, {timestamp}
+
+  # AWS region
+  region: "us-west-2"
+
+  # Additional S3 parameters
+  extra:
+    storage_class: "STANDARD_IA"  # Infrequent Access for cost savings
+    encryption: "AES256"
+    acl: "private"
+
+# Output format
+format: "jsonl"
+
+# Compress output files with gzip
+compression: "gzip"
+
+# No schema transformation (keep raw)
+schema: "raw"

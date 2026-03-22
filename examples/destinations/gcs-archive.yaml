@@ -1,0 +1,43 @@
+# Google Cloud Storage Archive Destination
+#
+# Archives replayed logs to Google Cloud Storage bucket.
+# Useful for long-term storage, compliance, and data lake integration.
+#
+# Prerequisites:
+#   - GCS bucket created (e.g., security-datasets-archive)
+#   - Service account with Storage Object Creator role
+#   - Credentials configured in ~/.echolake/credentials.yaml
+#
+# Usage:
+#   echolake echo-profile my-profile --destination gcs-archive
+#   echolake echo-profile my-profile --destination gcs-archive --dry-run
+
+destination:
+  name: "gcs-archive"
+  description: "Google Cloud Storage long-term archive"
+  tags:
+    - gcs
+    - google-cloud
+    - archive
+    - compliance
+
+# Destination type
+type: "gcs"
+
+# Connection parameters
+connection:
+  bucket: "security-datasets-archive"
+  prefix: "echolake/replays/2026-01/"
+  project_id: "your-gcp-project-id"
+  region: "us-central1"
+
+  # Optional: Additional GCS settings
+  extra:
+    storage_class: "STANDARD"  # STANDARD, NEARLINE, COLDLINE, ARCHIVE
+    encryption: "GOOGLE_MANAGED"  # Or CUSTOMER_MANAGED with KMS key
+
+# Output format
+format: "jsonl"
+
+# Optional: Apply schema transformation
+# schema: "ocsf"

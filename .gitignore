@@ -1,0 +1,128 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# Documentation
+docs/_build/
+site/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Credentials (CRITICAL - never commit!)
+*.pem
+*.key
+credentials.json
+credentials.yaml
+service-account*.json
+*credentials*.yaml
+!credentials.yaml.template
+!*credentials*.template
+
+# Local config
+echolake.local.yaml
+config.local.yaml
+datasources.yaml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+.*.swp
+
+# Project-specific
+sample-data/
+output/
+replay-output/
+
+# Test scripts and directories (local development only)
+# Ignore temporary test files in root and other dirs, but preserve tests/ directory
+test_*.py
+test_*.sh
+demo_*.py
+debug_*.py
+preview_*.py
+test*/
+test-*/
+!tests/
+!tests/**
+demo-out/
+output-test/
+multi-file-range-*/
+test*.yaml
+!tests/**/*.yaml
+preview_*.log
+
+# Analysis and summary docs (local development only)
+CACHE_PERFORMANCE_COMPARISON.md
+DATASET_PREVIEW_RESULTS.md
+*_SUMMARY.md
+*_RESULTS.md
+*_COMPARISON.md
+
+# Content and datasets (data, not code)
+meta-datasets/
+normalized-datasets/
+echolake-datasets/
+streaming_test_comprehensive/
+
+# Claude artifacts
+.claude/
+CLAUDE.md
+.mcp.json

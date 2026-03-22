@@ -1,0 +1,26 @@
+# OCSF replay configuration
+# Reads from S3, outputs to GCS with time compression
+
+echo:
+  delta_factor: 0.5  # Compress time deltas by 50% (events closer together)
+  base_time: auto
+  target_time: now
+  prevent_future: true
+
+input:
+  source:
+    type: s3
+    bucket: ocsf-events
+    prefix: raw/
+    pattern: "*.json"
+  format: jsonl
+  schema: ocsf
+
+output:
+  destination:
+    type: gcs
+    bucket: replayed-ocsf
+    path_template: "compressed/{year}-{month}-{day}/{filename}"
+  format: jsonl
+  compression: gzip
+  batch_size: 1000

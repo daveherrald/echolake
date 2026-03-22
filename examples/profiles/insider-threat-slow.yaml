@@ -1,0 +1,77 @@
+# Insider Threat Detection (Slow Burn)
+#
+# Simulates a slow, deliberate insider threat over 30 days.
+# Useful for testing behavioral analytics and anomaly detection.
+# Plays in real-time to simulate actual user behavior patterns.
+#
+# Usage:
+#   echolake echo-profile insider-threat-slow --destination chronicle-prod
+#   echolake echo-profile insider-threat-slow --destination chronicle-prod --dry-run
+
+profile:
+  name: "insider-threat-slow"
+  version: "1.0.0"
+  description: "30-day insider threat scenario with behavioral anomalies"
+  author: "security-team@example.com"
+  tags:
+    - insider-threat
+    - behavioral-analytics
+    - ueba
+    - long-term
+
+datasets:
+  # Days 1-5: Normal behavior baseline
+  - ref: "local:meta-datasets/normal-user-activity"
+    description: "Establish normal behavior baseline"
+    replay:
+      delta_factor: 1.0  # Real-time
+      target_time: "now-30d"
+
+  # Days 6-10: Slight anomalies (increased file access)
+  - ref: "local:meta-datasets/increased-file-access"
+    description: "Beginning to access more files than usual"
+    replay:
+      delta_factor: 1.0
+      target_time: "now-25d"
+
+  # Days 11-15: Accessing sensitive files
+  - ref: "local:meta-datasets/sensitive-file-access"
+    description: "Accessing HR/Finance/Executive files"
+    replay:
+      delta_factor: 1.0
+      target_time: "now-20d"
+
+  # Days 16-20: Copying files to USB/cloud
+  - ref: "local:meta-datasets/data-staging"
+    description: "Copying files to personal cloud storage"
+    replay:
+      delta_factor: 1.0
+      target_time: "now-15d"
+
+  # Days 21-25: Large data transfers
+  - ref: "local:meta-datasets/large-transfers"
+    description: "Uploading large amounts of data externally"
+    replay:
+      delta_factor: 1.0
+      target_time: "now-10d"
+
+  # Days 26-30: Cleanup and covering tracks
+  - ref: "local:meta-datasets/log-deletion"
+    description: "Attempting to delete logs and cover tracks"
+    replay:
+      delta_factor: 1.0
+      target_time: "now-5d"
+
+# Global: Real-time replay to simulate actual behavior patterns
+echo:
+  delta_factor: 1.0
+  base_time: "earliest"
+  target_time: "now-30d"
+  prevent_future: true
+
+schema: "raw"
+
+defaults:
+  scenario_type: "insider_threat"
+  detection_type: "behavioral"
+  timeline: "30_days"

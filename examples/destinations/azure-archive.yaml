@@ -1,0 +1,51 @@
+# Azure Blob Storage Archive Destination
+#
+# Archives replayed logs to Azure Blob Storage.
+# Useful for Azure-based data lakes and long-term retention.
+#
+# Prerequisites:
+#   - Azure Storage Account created
+#   - Container created (e.g., security-logs)
+#   - Connection string or SAS token configured
+#   - Credentials configured in ~/.echolake/credentials.yaml
+#
+# Usage:
+#   echolake echo-profile my-profile --destination azure-archive
+#   echolake echo-profile my-profile --destination azure-archive --dry-run
+
+destination:
+  name: "azure-archive"
+  description: "Azure Blob Storage archive for security logs"
+  tags:
+    - azure
+    - blob-storage
+    - archive
+    - compliance
+
+# Destination type
+type: "azure_blob"
+
+# Connection parameters
+connection:
+  # Storage account name
+  account_name: "your-storage-account"
+
+  # Container name
+  container: "security-logs"
+
+  # Blob prefix (folder path)
+  prefix: "echolake/replays/2026-01/"
+
+  # Optional: Additional Azure settings
+  extra:
+    # Blob tier: Hot, Cool, Archive
+    blob_tier: "Cool"
+
+    # Encryption scope (if using customer-managed keys)
+    # encryption_scope: "your-encryption-scope"
+
+# Output format
+format: "jsonl"
+
+# Optional: Apply schema transformation
+# schema: "ocsf"

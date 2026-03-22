@@ -1,0 +1,29 @@
+# Destination: Local Filesystem
+#
+# Write replayed data to local filesystem
+# Useful for development, testing, or local analysis
+
+destination:
+  name: "local-output"
+  description: "Local filesystem output for development and testing"
+  tags:
+    - local
+    - development
+    - testing
+
+type: "local"
+
+connection:
+  # Local path (can use template variables)
+  path: "/tmp/echolake-output/{profile}/{date}/"
+
+  # Additional options
+  extra:
+    create_directories: true
+    overwrite: false  # Don't overwrite existing files
+
+# Output format
+format: "jsonl"
+
+# Schema transformation (optional)
+schema: "raw"

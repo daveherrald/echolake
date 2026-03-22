@@ -1,0 +1,2 @@
+{"timestamp": "2025-01-15T10:00:00Z", "event_type": "network", "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2"}
+{"timestamp": "2025-01-15T10:01:00Z", "event_type": "network", "src_ip": "10.0.0.2", "dst_ip": "10.0.0.3"}

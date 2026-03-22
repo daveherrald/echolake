@@ -1,0 +1,31 @@
+# Standard Output (stdout) Destination
+#
+# Writes replayed logs to standard output.
+# Useful for debugging, piping to other commands, or quick inspection.
+#
+# No credentials required.
+#
+# Usage:
+#   echolake echo-profile my-profile --destination stdout-debug
+#   echolake echo-profile my-profile --destination stdout-debug | jq '.'
+#   echolake echo-profile my-profile --destination stdout-debug | grep 'error'
+
+destination:
+  name: "stdout-debug"
+  description: "Standard output for debugging and piping"
+  tags:
+    - stdout
+    - debug
+    - development
+
+# Destination type
+type: "stdout"
+
+# No connection parameters needed for stdout
+connection: {}
+
+# Output format
+format: "jsonl"  # One JSON object per line
+
+# Optional: Transform to specific schema
+schema: "raw"

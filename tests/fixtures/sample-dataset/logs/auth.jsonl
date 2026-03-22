@@ -1,0 +1,3 @@
+{"timestamp": "2025-01-15T10:00:00Z", "event_type": "authentication", "user": "alice", "status": "success"}
+{"timestamp": "2025-01-15T10:01:00Z", "event_type": "authentication", "user": "bob", "status": "success"}
+{"timestamp": "2025-01-15T10:02:00Z", "event_type": "authentication", "user": "charlie", "status": "failed"}

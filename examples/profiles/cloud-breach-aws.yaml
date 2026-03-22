@@ -1,0 +1,76 @@
+# AWS Cloud Breach Simulation
+#
+# Simulates a complete cloud breach targeting AWS infrastructure.
+# Includes credential compromise, privilege escalation, and data exfiltration.
+# Compresses 5 days into 45 minutes.
+#
+# Usage:
+#   echolake echo-profile cloud-breach-aws --destination s3-archive
+#   echolake echo-profile cloud-breach-aws --destination s3-archive --dry-run
+
+profile:
+  name: "cloud-breach-aws"
+  version: "1.0.0"
+  description: "AWS cloud breach simulation (5 days → 45 minutes)"
+  author: "cloud-security-team@example.com"
+  tags:
+    - aws
+    - cloud
+    - breach
+    - iam
+    - s3
+
+datasets:
+  # Stage 1: Initial Access - Compromised Credentials
+  - ref: "local:meta-datasets/aws-credential-compromise"
+    description: "Compromised IAM credentials (leaked on GitHub)"
+
+  # Stage 2: Reconnaissance - CloudTrail enumeration
+  - ref: "local:meta-datasets/aws-reconnaissance"
+    description: "Enumerate AWS resources, permissions, S3 buckets"
+
+  # Stage 3: Persistence - Backdoor IAM user
+  - ref: "local:meta-datasets/aws-iam-persistence"
+    description: "Create backdoor IAM user with admin access"
+
+  # Stage 4: Privilege Escalation
+  - ref: "local:meta-datasets/aws-privesc"
+    description: "Escalate privileges via IAM policy manipulation"
+
+  # Stage 5: Defense Evasion - Disable CloudTrail
+  - ref: "local:meta-datasets/aws-cloudtrail-disable"
+    description: "Attempt to disable CloudTrail logging"
+
+  # Stage 6: Credential Access - Steal more credentials
+  - ref: "local:meta-datasets/aws-secrets-manager-access"
+    description: "Access AWS Secrets Manager and Parameter Store"
+
+  # Stage 7: Discovery - Find sensitive data
+  - ref: "local:meta-datasets/aws-s3-enumeration"
+    description: "Enumerate S3 buckets for sensitive data"
+
+  # Stage 8: Collection - Download sensitive files
+  - ref: "local:meta-datasets/aws-s3-download"
+    description: "Download data from S3 buckets"
+
+  # Stage 9: Exfiltration - Transfer to attacker infrastructure
+  - ref: "local:meta-datasets/aws-data-exfiltration"
+    description: "Exfiltrate data to external attacker-controlled S3"
+
+  # Stage 10: Impact - Cryptomining or ransomware
+  - ref: "local:meta-datasets/aws-crypto-mining"
+    description: "Deploy cryptocurrency miners on EC2 instances"
+
+# Compress 5 days (120 hours) into 45 minutes (0.75 hours)
+echo:
+  delta_factor: 0.00625  # 120 / 0.75 = 160, so 1/160 = 0.00625
+  base_time: "earliest"
+  target_time: "now-45m"
+  prevent_future: true
+
+schema: "raw"
+
+defaults:
+  scenario_type: "cloud_breach"
+  cloud_provider: "aws"
+  attack_surface: "iam_s3_cloudtrail"

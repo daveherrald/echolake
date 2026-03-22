@@ -1,0 +1,36 @@
+# Destination: Google Chronicle Production
+#
+# Google Chronicle ingestion endpoint
+# Uses service account JSON for authentication (stored separately)
+
+destination:
+  name: "chronicle-prod"
+  description: "Google Chronicle production instance"
+  tags:
+    - chronicle
+    - production
+    - siem
+    - cloud
+
+type: "chronicle"
+
+connection:
+  # GCP project
+  project_id: "security-detection-prod"
+
+  # Chronicle-specific
+  log_type: "GENERIC_EVENT"  # Or use dataset's platform metadata
+
+  # Region/location
+  region: "us-central1"
+
+  # Additional Chronicle parameters
+  extra:
+    customer_id: "production-customer-id"
+    batch_size: 500
+
+# Output format
+format: "jsonl"
+
+# Schema transformation
+schema: "raw"

@@ -1,0 +1,56 @@
+# Replay Profile: Multi-Speed Attack Simulation
+#
+# Purpose: Demonstrate per-dataset replay overrides
+# Different attack stages at different speeds to highlight specific phases
+
+profile:
+  name: "multi-speed-attack"
+  version: "1.0.0"
+  description: "Attack simulation with variable speed per stage"
+  author: "red-team@company.com"
+  tags:
+    - variable-speed
+    - advanced
+    - training
+
+datasets:
+  # Initial access - slowed down 2x for detailed analysis
+  - ref: "local:meta-datasets/web-exploitation-cves"
+    version: "*"
+    description: "Initial compromise - slowed for analysis"
+    replay:
+      delta_factor: 2.0       # 2x slower than real-time
+      target_time: "now-4h"
+
+  # Credential dumping - real-time
+  - ref: "local:meta-datasets/credential-dumping-t1003"
+    version: "*"
+    description: "Credential theft - real-time"
+    replay:
+      delta_factor: 1.0       # Real-time
+      target_time: "now-2h"
+
+  # Lateral movement - compressed 10x
+  - ref: "local:meta-datasets/lateral-movement-suite"
+    version: "*"
+    description: "Lateral movement - highly compressed"
+    replay:
+      delta_factor: 0.1       # 10x faster
+      target_time: "now-1h"
+
+  # Ransomware - slowed 5x to see encryption progression
+  - ref: "local:meta-datasets/ransomware-suite"
+    version: "*"
+    description: "Ransomware deployment - slowed to observe"
+    replay:
+      delta_factor: 5.0       # 5x slower
+      target_time: "now-30m"
+
+# Global defaults (overridden by per-dataset config above)
+echo:
+  delta_factor: 1.0
+  base_time: "earliest"
+  target_time: "now-1h"
+  prevent_future: true
+
+schema: "raw"

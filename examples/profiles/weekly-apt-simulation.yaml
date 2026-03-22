@@ -1,0 +1,57 @@
+# Replay Profile: Weekly APT Simulation
+#
+# Purpose: Comprehensive APT attack simulation for SOC training
+# Combines multiple attack stages: initial access, persistence, lateral movement, exfiltration
+# Compresses 7 days of activity to 1 hour for realistic but accelerated training
+
+profile:
+  name: "weekly-apt-simulation"
+  version: "1.0.0"
+  description: "7-day APT attack chain compressed to 1 hour for SOC training"
+  author: "security-team@company.com"
+  tags:
+    - apt
+    - training
+    - multi-stage
+    - weekly
+
+# Multiple datasets - executed in order
+datasets:
+  # Stage 1: Initial Access (Day 1)
+  - ref: "local:meta-datasets/web-exploitation-cves"
+    version: "*"
+    description: "Initial compromise via web application exploit"
+
+  # Stage 2: Persistence (Day 1-2)
+  - ref: "local:meta-datasets/registry-keys-used-for-persistence"
+    version: "*"
+    description: "Establish persistence via registry"
+
+  # Stage 3: Credential Access (Day 2-3)
+  - ref: "local:meta-datasets/credential-dumping-t1003"
+    version: "*"
+    description: "Dump credentials from compromised systems"
+
+  # Stage 4: Lateral Movement (Day 3-5)
+  - ref: "local:meta-datasets/lateral-movement-suite"
+    version: "*"
+    description: "Spread across network using stolen credentials"
+
+  # Stage 5: Impact (Day 6-7)
+  - ref: "local:meta-datasets/ransomware-suite"
+    version: "*"
+    description: "Deploy ransomware for impact"
+
+# Global replay configuration (applies to all datasets unless overridden)
+echo:
+  delta_factor: 0.006    # 7 days (168 hours) → 1 hour
+  base_time: "earliest"  # Use earliest timestamp as reference
+  target_time: "now-1h"  # End replay 1 hour ago
+  prevent_future: true   # Don't allow future timestamps
+
+# Global schema (can override per dataset)
+schema: "raw"
+
+# Additional defaults
+defaults:
+  output_format: "jsonl"

@@ -1,0 +1,344 @@
+# Sourcetype Timestamp Registry
+# Maps sourcetype -> timestamp extraction patterns
+#
+# Pattern fields:
+#   field:    Dict field name (supports dot notation for nested fields)
+#   format:   iso8601 | unix_seconds | unix_millis | auto | strftime pattern
+#   regex:    (optional) Regex with capture group to extract value from field
+#   is_base:  (optional) Use as base timestamp for delta calculation (default: false)
+#
+# Fallback chain (highest to lowest priority):
+#   1. Explicit timestamp_patterns from config/CLI
+#   2. Sourcetype registry lookup (this file)
+#   3. Schema default patterns (raw.py 16-pattern list)
+
+# === Windows / Sysmon (XML-parsed -> dict with 'timestamp' from XML parser) ===
+XmlWinEventLog:
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+WinEventLog:
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+"sysmon:linux":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+# === Office 365 ===
+"o365:management:activity":
+  - field: CreationTime
+    format: iso8601
+    is_base: true
+  - field: StartTime
+    format: iso8601
+  - field: MessageTime
+    format: iso8601
+  - field: MessageDate
+    format: iso8601
+  - field: FilteringDate
+    format: iso8601
+
+# === AWS ===
+"aws:cloudtrail":
+  - field: eventTime
+    format: iso8601
+    is_base: true
+  - field: time_dt
+    format: iso8601
+
+"aws:asl":
+  - field: time
+    format: unix_millis
+    is_base: true
+
+"aws:cloudwatchlogs":
+  - field: timestamp
+    format: unix_millis
+    is_base: true
+
+"aws:s3:accesslogs":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+# === Azure ===
+"azure:monitor:aad":
+  - field: time
+    format: auto
+    is_base: true
+  - field: properties.createdDateTime
+    format: iso8601
+  - field: properties.timeGenerated
+    format: iso8601
+
+"azure:monitor:activity":
+  - field: time
+    format: auto
+    is_base: true
+
+"azure:aad:signin":
+  - field: createdDateTime
+    format: iso8601
+    is_base: true
+
+# === Cisco ===
+"cisco:sfw:estreamer":
+  - field: FirstPacketSecond
+    format: unix_seconds
+    is_base: true
+  - field: LastPacketSecond
+    format: unix_seconds
+
+"cisco:nvm:flowdata":
+  - field: fss
+    format: unix_seconds
+    is_base: true
+
+"cisco:asa":
+  # Raw syslog with embedded ISO timestamp: :2025-10-30T11:04:10Z:
+  - field: line
+    regex: '(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)'
+    format: iso8601
+    is_base: true
+
+# === Suricata ===
+suricata:
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+# === Okta ===
+"OktaIM2:log":
+  - field: published
+    format: iso8601
+    is_base: true
+
+# === Generic JSON ===
+_json:
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: requestReceivedTimestamp
+    format: iso8601
+  - field: stageTimestamp
+    format: iso8601
+
+# === Stash ===
+stash:
+  - field: "@timestamp"
+    format: iso8601
+    is_base: true
+
+# === HTTP Event Collector ===
+httpevent:
+  - field: time
+    format: unix_seconds
+    is_base: true
+
+# === Auditd ===
+auditd:
+  # msg=audit(1749121418.950:6845) - unix seconds with fractional
+  - field: line
+    regex: 'msg=audit\((\d+\.\d+):\d+\)'
+    format: unix_seconds
+    is_base: true
+
+# === VMware Syslog ===
+vmw-syslog:
+  # Raw syslog with embedded ISO timestamp: 2025-05-06T17:14:35.232Z
+  - field: line
+    regex: '(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)'
+    format: iso8601
+    is_base: true
+
+# === Nginx ===
+"nginx:plus:kv":
+  - field: time_local
+    format: auto
+    is_base: true
+
+# === Zscaler ===
+zscalernss-web:
+  - field: datetime
+    format: auto
+    is_base: true
+
+# === Google Workspace / GCP ===
+"gcp:pubsub:message":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+"google:gcp:pubsub:message":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+
+# === Palo Alto ===
+"pan:threat":
+  - field: generated_time
+    format: auto
+    is_base: true
+
+"pan:traffic":
+  - field: generated_time
+    format: auto
+    is_base: true
+
+# === CrowdStrike ===
+"crowdstrike:events:sensor":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: ProcessStartTime
+    format: unix_seconds
+
+# === Linux / Unix ===
+"linux:audit":
+  - field: line
+    regex: 'msg=audit\((\d+\.\d+):\d+\)'
+    format: unix_seconds
+    is_base: true
+
+syslog:
+  # Generic syslog - try embedded ISO timestamp first
+  - field: line
+    regex: '(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)'
+    format: iso8601
+    is_base: true
+
+# === Stream ===
+"stream:http":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: endtime
+    format: iso8601
+
+# === AWS Security Hub ===
+"aws:securityhub:finding":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: FirstObservedAt
+    format: iso8601
+  - field: LastObservedAt
+    format: iso8601
+  - field: CreatedAt
+    format: iso8601
+  - field: UpdatedAt
+    format: iso8601
+
+# === Microsoft Defender ===
+"ms:defender:atp:alerts":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: alertCreationTime
+    format: iso8601
+  - field: firstEventTime
+    format: iso8601
+  - field: lastEventTime
+    format: iso8601
+  - field: lastUpdateTime
+    format: iso8601
+  - field: resolvedTime
+    format: iso8601
+
+"ms365:defender:incident:alerts":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: creationTime
+    format: iso8601
+  - field: lastUpdatedTime
+    format: iso8601
+  - field: resolvedTime
+    format: iso8601
+  - field: firstActivity
+    format: iso8601
+  - field: lastActivity
+    format: iso8601
+
+# === Azure Monitor ===
+"mscs:azure:audit":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: eventTimestamp
+    format: iso8601
+  - field: submissionTimestamp
+    format: iso8601
+
+# === CircleCI ===
+circleci:
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: step_time
+    format: iso8601
+  - field: job_time
+    format: iso8601
+  - field: queued_time
+    format: iso8601
+  - field: stop_time
+    format: iso8601
+
+# === osquery ===
+"osquery:results":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: unixTime
+    format: unix_seconds
+
+# === O365 Reporting ===
+"o365:reporting:messagetrace":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: Received
+    format: iso8601
+
+# === Cisco Duo ===
+"cisco:duo:administrator":
+  - field: timestamp
+    format: unix_seconds
+    is_base: true
+  - field: isotimestamp
+    format: iso8601
+
+"cisco:duo:activity":
+  - field: timestamp
+    format: unix_seconds
+    is_base: true
+  - field: isotimestamp
+    format: iso8601
+
+# === Google Workspace ===
+"gws:reports:login":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: id.time
+    format: iso8601
+
+# === AppDynamics ===
+appdynamics_security:
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: attackLastDetected
+    format: iso8601
+
+# === Cisco Isovalent ===
+"cisco:isovalent:processExec":
+  - field: timestamp
+    format: iso8601
+    is_base: true
+  - field: process_exec.process.start_time
+    format: iso8601

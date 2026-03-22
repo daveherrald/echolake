@@ -1,0 +1,109 @@
+metadata:
+  name: "multi-source-lateral-movement"
+  version: "1.0.0"
+  description: "Multi-source detection of lateral movement using RDP and SMB across Windows and network devices"
+  author: "security-team@example.com"
+  created: "2025-01-28"
+  tags:
+    - lateral-movement
+    - rdp
+    - smb
+    - multi-source
+
+  mitre_attack:
+    techniques:
+      - id: "T1021.001"
+        name: "Remote Desktop Protocol"
+        tactics: ["lateral-movement"]
+      - id: "T1021.002"
+        name: "SMB/Windows Admin Shares"
+        tactics: ["lateral-movement"]
+    tactics:
+      - "lateral-movement"
+
+files:
+  bundled:
+    # Windows Security Event Logs
+    - path: "logs/windows-security.jsonl"
+      description: "Windows Security Event Log - RDP login events (4624, 4625)"
+      format: "jsonl"
+      schema: "raw"
+      event_count: 450
+
+      log_source:
+        vendor: "Microsoft"
+        product: "Windows"
+        category: "Security"
+        event_ids: [4624, 4625, 4672]
+
+      platforms:
+        chronicle:
+          logtype: "WINDOWS_EVENTLOG"
+        elastic:
+          index: "winlogbeat-security"
+
+    # Sysmon Network Connections
+    - path: "logs/sysmon-network.jsonl"
+      description: "Sysmon Event ID 3 - Network connections to RDP/SMB ports"
+      format: "jsonl"
+      schema: "raw"
+      event_count: 320
+
+      log_source:
+        vendor: "Microsoft"
+        product: "Windows"
+        category: "Sysmon"
+        subcategory: "Network Connection"
+        event_ids: [3]
+
+      platforms:
+        chronicle:
+          logtype: "WINDOWS_SYSMON"
+        elastic:
+          index: "winlogbeat-sysmon"
+
+  references:
+    # Zeek network logs
+    - uri: "s3://datasets/network/zeek-conn.jsonl"
+      description: "Zeek connection logs showing RDP (3389) and SMB (445) traffic"
+      format: "jsonl"
+      schema: "raw"
+
+      log_source:
+        vendor: "Zeek"
+        product: "Zeek"
+        category: "Network"
+        subcategory: "Connection Logs"
+
+      platforms:
+        chronicle:
+          logtype: "ZEEK_CONN"
+        elastic:
+          index: "filebeat-zeek"
+          data_stream:
+            dataset: "zeek.connection"
+
+    # Firewall logs
+    - uri: "s3://datasets/network/firewall-allow.jsonl"
+      description: "Firewall allow logs for RDP/SMB connections"
+      format: "jsonl"
+      schema: "raw"
+
+      log_source:
+        vendor: "Palo Alto"
+        product: "NGFW"
+        category: "Traffic"
+        subcategory: "Allow"
+
+      platforms:
+        chronicle:
+          logtype: "PALO_ALTO_TRAFFIC"
+        elastic:
+          index: "filebeat-panw"
+
+defaults:
+  echo:
+    delta_factor: 1.0
+    base_time: "earliest"
+    target_time: "now-1h"
+  schema: "raw"

@@ -1,0 +1,33 @@
+# Getting Started - Simple Example
+#
+# This is the simplest possible replay profile.
+# Perfect for your first replay or testing the setup.
+#
+# Usage:
+#   echolake echo-profile getting-started --destination local-output
+#   echolake echo-profile getting-started --destination local-output --dry-run
+
+profile:
+  name: "getting-started"
+  version: "1.0.0"
+  description: "Simple example for getting started with EchoLake"
+  author: "you@example.com"
+  tags:
+    - example
+    - getting-started
+    - simple
+
+# One dataset to replay
+datasets:
+  - ref: "local:meta-datasets/sample-logs"
+    description: "Sample security logs"
+
+# Simple replay: shift logs to 1 hour ago
+echo:
+  delta_factor: 1.0        # Keep original timing
+  base_time: "earliest"    # Start from first event
+  target_time: "now-1h"    # Replay ending 1 hour ago
+  prevent_future: true     # Don't create future timestamps
+
+# Output in raw format (no transformations)
+schema: "raw"
