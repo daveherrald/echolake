@@ -56,7 +56,7 @@ class InputConfig(BaseModel):
 
 class OutputDestinationConfig(BaseModel):
     """Configuration for output destination."""
-    type: str = Field(..., description="Destination type: local, s3, gcs, azure")
+    type: str = Field(..., description="Destination type: local, s3, gcs, azure, stdout, splunk_hec")
     path: Optional[str] = Field(default=None, description="Local path")
     bucket: Optional[str] = Field(default=None, description="Cloud bucket name")
     path_template: Optional[str] = Field(
@@ -64,11 +64,36 @@ class OutputDestinationConfig(BaseModel):
         description="Path template with variables: {filename}, {sourcetype}, {year}, {month}, {day}, {hour}, {minute}"
     )
 
+    # --- Splunk HTTP Event Collector (HEC) settings ---
+    # Used only when type == "splunk_hec". The token is never stored here; it is
+    # read at runtime from the environment variable named by hec_token_env.
+    hec_url: Optional[str] = Field(
+        default=None,
+        description="Full HEC collector URL, e.g. https://http-inputs-<stack>.splunkcloud.com/services/collector"
+    )
+    hec_token_env: str = Field(
+        default="ECHOLAKE_SPLUNK_HEC_TOKEN",
+        description="Name of the environment variable holding the HEC token (token is not stored in config)"
+    )
+    index: Optional[str] = Field(default=None, description="Splunk index to route all events to (overrides per-event index)")
+    verify_ssl: bool = Field(default=True, description="Verify the HEC server's TLS certificate")
+    use_raw_endpoint: bool = Field(default=False, description="POST to /services/collector/raw instead of /event")
+    default_host: Optional[str] = Field(default=None, description="Fallback host when an event has no host field")
+    source_override: Optional[str] = Field(default=None, description="Force this source on every event")
+    sourcetype_override: Optional[str] = Field(default=None, description="Force this sourcetype on every event")
+    time_field: str = Field(default="_time", description="Event field carrying the event timestamp")
+    raw_field: str = Field(default="_raw", description="Event field carrying the raw log line to send as the HEC event")
+    host_field: str = Field(default="host", description="Event field carrying the host")
+    source_field: str = Field(default="source", description="Event field carrying the source")
+    sourcetype_field: str = Field(default="sourcetype", description="Event field carrying the sourcetype")
+    hec_dry_run: bool = Field(default=False, description="Build and print HEC payloads without sending them")
+    hec_max_workers: int = Field(default=1, description="Concurrent HEC POST workers (>1 enables parallel sending)")
+
     @field_validator('type')
     @classmethod
     def validate_destination_type(cls, v: str) -> str:
         """Validate destination type."""
-        valid_types = ["local", "s3", "gcs", "azure", "stdout"]
+        valid_types = ["local", "s3", "gcs", "azure", "stdout", "splunk_hec", "hec"]
         if v not in valid_types:
             raise ValueError(f"Invalid destination type: {v}. Must be one of {valid_types}")
         return v

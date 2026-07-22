@@ -135,6 +135,30 @@ class EchoEngine:
                 'path_template': dest_cfg.path_template,
                 'compression': output_cfg.compression,
             }
+        elif dest_cfg.type in ('splunk_hec', 'hec'):
+            import os
+            # Force jsonl serialization so per-event fields survive to the
+            # destination (it maps _raw/_time/host/source/sourcetype per event).
+            output_cfg.format = 'jsonl'
+            token = os.getenv(dest_cfg.hec_token_env, '')
+            dest_kwargs = {
+                'hec_url': dest_cfg.hec_url,
+                'token': token,
+                'index': dest_cfg.index,
+                'verify_ssl': dest_cfg.verify_ssl,
+                'use_raw_endpoint': dest_cfg.use_raw_endpoint,
+                'default_host': dest_cfg.default_host,
+                'source_override': dest_cfg.source_override,
+                'sourcetype_override': dest_cfg.sourcetype_override,
+                'time_field': dest_cfg.time_field,
+                'raw_field': dest_cfg.raw_field,
+                'host_field': dest_cfg.host_field,
+                'source_field': dest_cfg.source_field,
+                'sourcetype_field': dest_cfg.sourcetype_field,
+                'batch_size': output_cfg.batch_size,
+                'max_workers': dest_cfg.hec_max_workers,
+                'dry_run': dest_cfg.hec_dry_run,
+            }
 
         self.output_destination = get_destination(dest_cfg.type, **dest_kwargs)
         self.output_format = get_output_format(output_cfg.format)

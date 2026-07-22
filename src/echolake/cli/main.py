@@ -144,6 +144,13 @@ def echo(
         min=1,
         max=32,
     ),
+    hec_workers: Optional[int] = typer.Option(
+        None,
+        "--hec-workers",
+        help="Concurrent HEC POST workers for the splunk_hec output (default: 1)",
+        min=1,
+        max=64,
+    ),
 ):
     """
     Echo security logs with timestamp manipulation.
@@ -262,6 +269,9 @@ def echo(
 
         if compression and cfg.output:
             cfg.output.compression = compression
+
+        if hec_workers and cfg.output and cfg.output.destination:
+            cfg.output.destination.hec_max_workers = hec_workers
 
         # Note: Don't validate cfg.input/output here - if dataset is specified,
         # EchoEngine will resolve it and create input config automatically
