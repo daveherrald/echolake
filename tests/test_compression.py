@@ -194,6 +194,7 @@ class TestS3DestinationCompression:
             compression="gzip",
         )
         dest.write("test.jsonl", ['{"msg": "hello"}'])
+        dest.close()  # buffered/streaming upload is finalized on flush/close
 
         # Verify put_object was called
         mock_client.put_object.assert_called_once()
@@ -221,10 +222,12 @@ class TestS3DestinationCompression:
             path_template="{filename}",
         )
         dest.write("test.jsonl", ['{"msg": "hello"}'])
+        dest.close()  # small buffer is flushed as a single put_object on close
 
         call_kwargs = mock_client.put_object.call_args[1]
         assert not call_kwargs["Key"].endswith(".gz")
-        assert call_kwargs["Body"] == b'{"msg": "hello"}'
+        # events are written line-delimited, so a trailing newline is expected
+        assert call_kwargs["Body"] == b'{"msg": "hello"}\n'
 
 
 class TestGCSDestinationCompression:
