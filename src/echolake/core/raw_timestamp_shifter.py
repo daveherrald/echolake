@@ -628,8 +628,10 @@ def _get_patterns_for_sourcetype(sourcetype: Optional[str]):
 
     # Fallback: small default set (covers most common cases). FortiGate's
     # date=.. time=.. is listed before _P_DATETIME so it claims that span
-    # instead of the generic datetime pattern.
-    return [_P_ISO8601, _P_FORTIGATE, _P_SYSLOG, _P_US_DATE, _P_DATETIME]
+    # instead of the generic datetime pattern. _P_EPOCH is safe here because
+    # its regex only matches epochs behind a "timestamp"/"time"/"_time" JSON
+    # key, so bare 10-digit numbers are not touched.
+    return [_P_ISO8601, _P_FORTIGATE, _P_SYSLOG, _P_US_DATE, _P_EPOCH, _P_DATETIME]
 
 
 # ---------------------------------------------------------------------------
