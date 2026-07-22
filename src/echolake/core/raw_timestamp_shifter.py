@@ -446,9 +446,15 @@ _SOURCETYPE_PATTERNS = {
     'WinEventLog:Microsoft-Windows-AppLocker/Packaged app-Execution': [_P_US_DATE],
     'WinRegistry':  [_P_US_DATE],
     # === FortiGate ===
+    # Splunk's BOTS/CIM sourcetypes use the fgt_* names; keep the legacy
+    # fortigate_* aliases too. The syslog header AND the embedded
+    # date=YYYY-MM-DD time=HH:MM:SS fields both need shifting.
     'fortigate_event':   [_P_FORTIGATE, _P_SYSLOG],
     'fortigate_traffic': [_P_FORTIGATE, _P_SYSLOG],
     'fortigate_utm':     [_P_FORTIGATE, _P_SYSLOG],
+    'fgt_event':         [_P_FORTIGATE, _P_SYSLOG],
+    'fgt_traffic':       [_P_FORTIGATE, _P_SYSLOG],
+    'fgt_utm':           [_P_FORTIGATE, _P_SYSLOG],
     # === IIS ===
     'iis':          [_P_DATETIME],
     # === Nessus ===
@@ -620,8 +626,10 @@ def _get_patterns_for_sourcetype(sourcetype: Optional[str]):
                         return pats
                 break
 
-    # Fallback: small default set (covers most common cases)
-    return [_P_ISO8601, _P_SYSLOG, _P_US_DATE, _P_DATETIME]
+    # Fallback: small default set (covers most common cases). FortiGate's
+    # date=.. time=.. is listed before _P_DATETIME so it claims that span
+    # instead of the generic datetime pattern.
+    return [_P_ISO8601, _P_FORTIGATE, _P_SYSLOG, _P_US_DATE, _P_DATETIME]
 
 
 # ---------------------------------------------------------------------------
