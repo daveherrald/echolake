@@ -143,6 +143,10 @@ class EchoConfig(BaseModel):
         default="now",
         description="Ceiling time: now, now-1h, or ISO8601 timestamp"
     )
+    no_shift: bool = Field(
+        default=False,
+        description="Passthrough: emit events with original timestamps and skip the Phase 1 scan (no _time or _raw changes)"
+    )
 
     @field_validator('delta_factor')
     @classmethod
