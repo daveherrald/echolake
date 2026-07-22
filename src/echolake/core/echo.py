@@ -135,6 +135,30 @@ class EchoEngine:
                 'path_template': dest_cfg.path_template,
                 'compression': output_cfg.compression,
             }
+        elif dest_cfg.type in ('splunk_hec', 'hec'):
+            import os
+            # Force jsonl serialization so per-event fields survive to the
+            # destination (it maps _raw/_time/host/source/sourcetype per event).
+            output_cfg.format = 'jsonl'
+            token = os.getenv(dest_cfg.hec_token_env, '')
+            dest_kwargs = {
+                'hec_url': dest_cfg.hec_url,
+                'token': token,
+                'index': dest_cfg.index,
+                'verify_ssl': dest_cfg.verify_ssl,
+                'use_raw_endpoint': dest_cfg.use_raw_endpoint,
+                'default_host': dest_cfg.default_host,
+                'source_override': dest_cfg.source_override,
+                'sourcetype_override': dest_cfg.sourcetype_override,
+                'time_field': dest_cfg.time_field,
+                'raw_field': dest_cfg.raw_field,
+                'host_field': dest_cfg.host_field,
+                'source_field': dest_cfg.source_field,
+                'sourcetype_field': dest_cfg.sourcetype_field,
+                'batch_size': output_cfg.batch_size,
+                'max_workers': dest_cfg.hec_max_workers,
+                'dry_run': dest_cfg.hec_dry_run,
+            }
 
         self.output_destination = get_destination(dest_cfg.type, **dest_kwargs)
         self.output_format = get_output_format(output_cfg.format)
@@ -193,9 +217,12 @@ class EchoEngine:
                     from rich.console import Console
                     Console().print(f"[yellow]⚠ Could not use timestamp metadata: {e}[/yellow]")
 
-            # If no timestamp range in metadata, scan files
+            # Passthrough mode: no timestamp changes, so no scan is needed.
+            no_shift = self.config.echo.no_shift
+
+            # If no timestamp range in metadata, scan files (skipped in passthrough)
             did_scan_phase = False
-            if not self.stats.original_earliest_time or not self.stats.original_latest_time:
+            if not no_shift and (not self.stats.original_earliest_time or not self.stats.original_latest_time):
                 from rich.console import Console
                 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
@@ -253,14 +280,17 @@ class EchoEngine:
                 logger.info(f"Calculated time shifts: base {original_base} -> {new_base}")
 
             # Phase 2: Stream each file and process events individually (zero memory accumulation)
-            if original_base and new_base:
+            if no_shift or (original_base and new_base):
                 from rich.console import Console
                 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
                 console = Console()
                 phase_label = "Phase 2: " if did_scan_phase else ""
                 console.print(f"\n[yellow]{phase_label}Processing and writing events...[/yellow]")
-                console.print("[dim]Writing events with updated timestamps...[/dim]\n")
+                if no_shift:
+                    console.print("[dim]Passthrough: original timestamps, no scan.[/dim]\n")
+                else:
+                    console.print("[dim]Writing events with updated timestamps...[/dim]\n")
 
                 # Calculate total bytes for accurate progress (not just file count)
                 total_bytes = 0
@@ -297,7 +327,7 @@ class EchoEngine:
                         files_completed = [0]  # mutable counter for closure
                         def _process_file_task(file_id, idx):
                             file_size = file_sizes.get(file_id, 0)
-                            self._stream_process_file(file_id, original_base, new_base, progress, process_task, file_size)
+                            self._stream_process_file(file_id, original_base, new_base, progress, process_task, file_size, no_shift=no_shift)
                             files_completed[0] += 1
                             file_name = file_id.split('/')[-1][:50]
                             progress.update(process_task, description=f"[green]Processing ({files_completed[0]}/{len(file_list)}): {file_name}")
@@ -318,7 +348,7 @@ class EchoEngine:
                             file_name = file_id.split('/')[-1][:50]
                             progress.update(process_task, description=f"[green]Processing (File {idx}/{len(file_list)}): {file_name}")
                             file_size = file_sizes.get(file_id, 0)
-                            self._stream_process_file(file_id, original_base, new_base, progress, process_task, file_size)
+                            self._stream_process_file(file_id, original_base, new_base, progress, process_task, file_size, no_shift=no_shift)
 
                 console.print("[green]✓ Processing complete![/green]\n")
 
@@ -336,7 +366,7 @@ class EchoEngine:
 
         return self.stats
 
-    def _stream_process_file(self, file_id: str, original_base: datetime, new_base: datetime, progress=None, task_id=None, file_size_bytes=0):
+    def _stream_process_file(self, file_id: str, original_base: datetime, new_base: datetime, progress=None, task_id=None, file_size_bytes=0, no_shift: bool = False):
         """
         Stream process a file - read events in small batches, apply shifts, write in batches.
         Uses minimal memory (only batch_size events at a time).
@@ -421,52 +451,55 @@ class EchoEngine:
                     progress.update(task_id, events=self.stats.event_count, rate=rate)
                     first_event = False
 
-                # Check if this is the base time file (for stats)
-                if not self.stats.original_base_time:
-                    for field, ts in event.timestamps.items():
-                        if ts == original_base:
-                            with self._stats_lock:
-                                self.stats.original_base_time = original_base
-                                self.stats.original_base_file = file_id
-                            break
+                # Passthrough (no_shift): leave every timestamp untouched and
+                # skip the whole shift path (no base needed, so no scan phase).
+                if not no_shift:
+                    # Check if this is the base time file (for stats)
+                    if not self.stats.original_base_time:
+                        for field, ts in event.timestamps.items():
+                            if ts == original_base:
+                                with self._stats_lock:
+                                    self.stats.original_base_time = original_base
+                                    self.stats.original_base_file = file_id
+                                break
 
-                # Apply timestamp shifts to this event
-                modified = False
-                for field, original_ts in event.timestamps.items():
-                    original_delta = original_ts - original_base
-                    new_delta = original_delta * delta_factor
-                    new_ts = new_base + new_delta
+                    # Apply timestamp shifts to this event
+                    modified = False
+                    for field, original_ts in event.timestamps.items():
+                        original_delta = original_ts - original_base
+                        new_delta = original_delta * delta_factor
+                        new_ts = new_base + new_delta
 
-                    # Apply ceiling if configured
-                    if ceiling and new_ts > ceiling:
-                        new_ts = ceiling
-                        local_events_at_ceiling += 1
+                        # Apply ceiling if configured
+                        if ceiling and new_ts > ceiling:
+                            new_ts = ceiling
+                            local_events_at_ceiling += 1
 
-                    event.timestamps[field] = new_ts
-                    modified = True
+                        event.timestamps[field] = new_ts
+                        modified = True
 
-                    # Track new timestamp range (local)
-                    if local_new_earliest is None or new_ts < local_new_earliest:
-                        local_new_earliest = new_ts
-                    if local_new_latest is None or new_ts > local_new_latest:
-                        local_new_latest = new_ts
+                        # Track new timestamp range (local)
+                        if local_new_earliest is None or new_ts < local_new_earliest:
+                            local_new_earliest = new_ts
+                        if local_new_latest is None or new_ts > local_new_latest:
+                            local_new_latest = new_ts
 
-                    # Track future events
-                    if ceiling and new_ts > self.stats.run_time:
-                        local_events_in_future += 1
+                        # Track future events
+                        if ceiling and new_ts > self.stats.run_time:
+                            local_events_in_future += 1
 
-                if modified:
-                    local_events_modified += 1
-                    # CRITICAL FIX: Update raw_data with new timestamps
-                    event.raw_data = event._update_raw_data(event.timestamps)
-                    # Shift timestamps embedded in _raw text (CSV exports)
-                    if isinstance(event.raw_data, dict) and '_raw' in event.raw_data:
-                        raw = event.raw_data['_raw']
-                        if isinstance(raw, str) and raw:
-                            event.raw_data['_raw'] = shift_raw_timestamps(
-                                raw, original_base, new_base, delta_factor, ceiling,
-                                sourcetype=sourcetype,
-                            )
+                    if modified:
+                        local_events_modified += 1
+                        # CRITICAL FIX: Update raw_data with new timestamps
+                        event.raw_data = event._update_raw_data(event.timestamps)
+                        # Shift timestamps embedded in _raw text (CSV exports)
+                        if isinstance(event.raw_data, dict) and '_raw' in event.raw_data:
+                            raw = event.raw_data['_raw']
+                            if isinstance(raw, str) and raw:
+                                event.raw_data['_raw'] = shift_raw_timestamps(
+                                    raw, original_base, new_base, delta_factor, ceiling,
+                                    sourcetype=sourcetype,
+                                )
 
                 # Add to buffer if not dry-run
                 if not self.dry_run:
