@@ -279,6 +279,28 @@ class EchoEngine:
                 self.stats.original_base_time = original_base
                 logger.info(f"Calculated time shifts: base {original_base} -> {new_base}")
 
+            elif did_scan_phase and not no_shift:
+                # The scan ran but extracted zero usable timestamps, so original_base
+                # is None and Phase 2 would be skipped silently -> 0 events written,
+                # reported as success. That is data loss masquerading as a clean run.
+                # Fail loudly with the most likely cause instead.
+                from rich.console import Console
+                Console().print(
+                    "[bold red]✗ No usable timestamp found in any scanned event.[/bold red]\n"
+                    "  The input was read but 0 events yielded a base timestamp, so a "
+                    "timestamp-shifting run would write 0 events.\n"
+                    "  Most common cause: the input schema's timestamp field does not match "
+                    "the data. The 'lakehouse_bronze' schema expects '_time' (or '_event_time'); "
+                    "if your events use a different field, set --input-schema raw (or omit schema) "
+                    "and/or define timestamp_patterns.\n"
+                    "  To emit events unchanged without any shift, use --no-shift."
+                )
+                raise ValueError(
+                    "No usable timestamp found in any scanned event (0 events had a base "
+                    "timestamp). Refusing to silently write 0 events from a shifting run. "
+                    "Check the input schema / timestamp field mapping, or use --no-shift."
+                )
+
             # Phase 2: Stream each file and process events individually (zero memory accumulation)
             if no_shift or (original_base and new_base):
                 from rich.console import Console
