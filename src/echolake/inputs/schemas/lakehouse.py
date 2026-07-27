@@ -65,10 +65,24 @@ class LakehouseBronzeSchema(InputSchema):
             List of timestamp pattern configurations
         """
         return [
+            # `_time` is the field the Splunk/lakehouse bronze JSONL exports actually
+            # carry (both ISO8601 and epoch-seconds forms are seen). List it first so
+            # it wins as the base timestamp; `_event_time` remains a fallback for the
+            # older manifest field name.
+            {
+                'field': '_time',
+                'format': 'iso8601',
+                'is_base': True,
+            },
+            {
+                'field': '_time',
+                'format': 'unix_seconds',
+                'is_base': True,
+            },
             {
                 'field': '_event_time',
                 'format': 'iso8601',
-                'is_base': True,  # Use _event_time as base for delta calculation
+                'is_base': True,  # Fallback base for delta calculation
             },
             {
                 'field': '_ingest_time',
@@ -87,5 +101,6 @@ class LakehouseBronzeSchema(InputSchema):
         Returns:
             True if valid, False otherwise
         """
-        # Lakehouse Bronze should have at least _event_time
-        return '_event_time' in raw_data
+        # Lakehouse Bronze should carry a base timestamp: `_time` (the real export
+        # field) or the legacy `_event_time`.
+        return '_time' in raw_data or '_event_time' in raw_data
