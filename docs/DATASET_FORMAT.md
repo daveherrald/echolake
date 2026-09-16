@@ -352,6 +352,53 @@ Overall list of tactics covered by the dataset.
 
 ---
 
+#### metadata.attack_flow (optional)
+
+**Type:** `object`
+
+References a companion [MITRE Attack Flow](https://center-for-threat-informed-defense.github.io/attack-flow/)
+document (Center for Threat-Informed Defense), a STIX 2.1 extension that describes
+the attack as an **ordered graph** of actions, assets, conditions, and operators
+rather than a flat list of techniques.
+
+`attack_flow` is **additive** to `mitre_attack`, not a replacement:
+
+- Use `mitre_attack` on every dataset as the lightweight which-techniques tag. It
+  is the right level for single-technique atomics and detection-content datasets.
+- Use `attack_flow` on **multi-step scenario datasets** where the order and the
+  causal relationships between stages matter (for example a full kill chain used
+  as ground truth for investigation or agent evaluation).
+
+The Attack Flow is stored as a companion file in the dataset directory (the STIX
+2.1 JSON bundle is verbose, so it is referenced rather than inlined), and this
+block is just the pointer.
+
+**Structure:**
+
+```yaml
+attack_flow:
+  path: attack_flow.json        # relative path from the dataset root (required)
+  format: stix-2.1              # "stix-2.1" (JSON bundle) or "afb" (builder format)
+  schema_version: "2.0.0"      # Attack Flow schema version
+  description: "P1-P7 CI/CD-to-cloud compromise chain"   # optional
+```
+
+**Fields:**
+- **path** (required) - Relative path from the dataset root to the Attack Flow
+  file. Must not be absolute or contain `..`.
+- **format** - `stix-2.1` for the canonical STIX 2.1 JSON bundle (default), or
+  `afb` for the Attack Flow Builder native format.
+- **schema_version** - Attack Flow schema version (default `2.0.0`).
+- **description** - Optional human-readable summary of the flow.
+
+**Validation:** `echolake validate-dataset` verifies the referenced file exists
+(under `--check-files`) and, when the optional `attack-flow` package is installed
+(`pip install "echolake[attack-flow]"`), validates the bundle against the Attack
+Flow schema. If the package is not installed the schema check is skipped, not
+failed.
+
+---
+
 ### files
 
 The `files` section defines what log files are included in or referenced by the dataset.

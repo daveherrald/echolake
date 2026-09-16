@@ -33,6 +33,51 @@ class MitreAttackInfo(BaseModel):
     tactics: List[str] = Field(default_factory=list, description="MITRE ATT&CK tactics")
 
 
+class AttackFlowRef(BaseModel):
+    """Reference to a companion MITRE Attack Flow document.
+
+    Attack Flow (Center for Threat-Informed Defense) is a STIX 2.1 extension that
+    describes an attack as an ordered graph of actions, assets, conditions, and
+    operators. It is stored as a companion file in the dataset directory and
+    referenced here rather than inlined, because the STIX bundle form is verbose.
+
+    This is additive to ``mitre_attack``: ``mitre_attack`` remains the lightweight
+    which-techniques tag, while ``attack_flow`` is the ordered representation used
+    for multi-step scenario datasets.
+    """
+
+    path: str = Field(..., description="Relative path from dataset root to the Attack Flow file")
+    format: str = Field(
+        default="stix-2.1",
+        description="Attack Flow serialization (stix-2.1 JSON bundle, or afb builder format)"
+    )
+    schema_version: str = Field(
+        default="2.0.0",
+        description="Attack Flow schema version"
+    )
+    description: Optional[str] = Field(default=None, description="Human-readable description")
+
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        """Validate path doesn't escape the dataset directory."""
+        path = Path(v)
+        if '..' in path.parts:
+            raise ValueError(f"Path cannot contain '..': {v}")
+        if path.is_absolute():
+            raise ValueError(f"Path must be relative: {v}")
+        return v
+
+    @field_validator('format')
+    @classmethod
+    def validate_format(cls, v: str) -> str:
+        """Validate Attack Flow format."""
+        valid_formats = ["stix-2.1", "afb"]
+        if v not in valid_formats:
+            raise ValueError(f"Invalid Attack Flow format: {v}. Must be one of {valid_formats}")
+        return v
+
+
 class TimestampRange(BaseModel):
     """Pre-computed timestamp range for a dataset."""
     earliest: str = Field(..., description="Earliest timestamp in ISO8601 format")
@@ -58,6 +103,10 @@ class DatasetMetadata(BaseModel):
     mitre_attack: Optional[MitreAttackInfo] = Field(
         default=None,
         description="MITRE ATT&CK metadata"
+    )
+    attack_flow: Optional[AttackFlowRef] = Field(
+        default=None,
+        description="Reference to a companion MITRE Attack Flow document (ordered attack graph)"
     )
 
     @field_validator('version')
@@ -350,6 +399,11 @@ class DatasetManifest(BaseModel):
             file_path = base_path / bundled_file.path
             if not file_path.exists():
                 missing.append(bundled_file.path)
+        # A referenced Attack Flow file must also exist when declared.
+        if self.metadata.attack_flow is not None:
+            flow_path = base_path / self.metadata.attack_flow.path
+            if not flow_path.exists():
+                missing.append(self.metadata.attack_flow.path)
         return missing
 
 

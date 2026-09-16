@@ -9,6 +9,7 @@ from echolake.datasets.models import (
     FileReference,
     MitreAttackTechnique,
     MitreAttackInfo,
+    AttackFlowRef,
     ResolvedDataset,
 )
 
@@ -153,6 +154,129 @@ def test_mitre_technique_id_validation():
     # Invalid technique ID
     with pytest.raises(ValueError, match="must start with 'T'"):
         MitreAttackTechnique(id="1078", name="Invalid")
+
+
+def test_attack_flow_ref_defaults():
+    """Test Attack Flow reference parsing and defaults."""
+    ref = AttackFlowRef(path="attack_flow.json")
+    assert ref.path == "attack_flow.json"
+    assert ref.format == "stix-2.1"
+    assert ref.schema_version == "2.0.0"
+    assert ref.description is None
+
+
+def test_attack_flow_ref_format_validation():
+    """Test Attack Flow format validation."""
+    # Valid formats
+    AttackFlowRef(path="flow.json", format="stix-2.1")
+    AttackFlowRef(path="flow.afb", format="afb")
+
+    # Invalid format
+    with pytest.raises(ValueError, match="Invalid Attack Flow format"):
+        AttackFlowRef(path="flow.json", format="stix-3.0")
+
+
+def test_attack_flow_ref_path_validation():
+    """Test Attack Flow path validation prevents directory traversal."""
+    with pytest.raises(ValueError, match="cannot contain"):
+        AttackFlowRef(path="../../../etc/passwd")
+
+    with pytest.raises(ValueError, match="must be relative"):
+        AttackFlowRef(path="/etc/passwd")
+
+
+def test_metadata_attack_flow_optional():
+    """Attack Flow is optional; a manifest without it still parses."""
+    fixture_path = Path(__file__).parent / "fixtures" / "sample-dataset" / "dataset.yaml"
+    manifest = DatasetManifest.from_file(fixture_path)
+    assert manifest.metadata.attack_flow is None
+
+
+def test_metadata_attack_flow_parses():
+    """A manifest carrying an attack_flow block parses into an AttackFlowRef."""
+    manifest = DatasetManifest(
+        metadata=DatasetMetadata(
+            name="test",
+            version="1.0.0",
+            description="Test",
+            attack_flow={
+                "path": "attack_flow.json",
+                "format": "stix-2.1",
+                "schema_version": "2.0.0",
+                "description": "P1-P7 chain",
+            },
+        )
+    )
+    assert manifest.metadata.attack_flow is not None
+    assert manifest.metadata.attack_flow.path == "attack_flow.json"
+    assert manifest.metadata.attack_flow.description == "P1-P7 chain"
+
+
+def test_validate_files_flags_missing_attack_flow():
+    """validate_files_exist flags a declared-but-missing Attack Flow file."""
+    manifest = DatasetManifest(
+        metadata=DatasetMetadata(
+            name="test",
+            version="1.0.0",
+            description="Test",
+            attack_flow=AttackFlowRef(path="attack_flow.json"),
+        )
+    )
+    base_path = Path(__file__).parent / "fixtures" / "sample-dataset"
+    missing = manifest.validate_files_exist(base_path)
+    assert "attack_flow.json" in missing
+
+
+def test_attack_flow_roundtrip(tmp_path):
+    """attack_flow survives serialization to and from a manifest file."""
+    manifest = DatasetManifest(
+        metadata=DatasetMetadata(
+            name="test",
+            version="1.0.0",
+            description="Test",
+            attack_flow=AttackFlowRef(path="attack_flow.json", description="chain"),
+        )
+    )
+    out = tmp_path / "dataset.yaml"
+    manifest.to_file(out)
+    reloaded = DatasetManifest.from_file(out)
+    assert reloaded.metadata.attack_flow is not None
+    assert reloaded.metadata.attack_flow.path == "attack_flow.json"
+    assert reloaded.metadata.attack_flow.description == "chain"
+
+
+def test_validate_attack_flow_missing_file():
+    """The optional validator reports a hard result for a missing file."""
+    from echolake.datasets.attack_flow import validate_attack_flow
+
+    result = validate_attack_flow(Path("/nonexistent/attack_flow.json"))
+    assert result.valid is False
+    assert result.skipped is False
+    assert "not found" in (result.reason or "")
+
+
+def test_validate_attack_flow_soft_dependency(tmp_path):
+    """The optional validator never crashes on a well-formed bundle, and when the
+    optional attack-flow package is absent it skips (does not hard-fail)."""
+    import json
+    from echolake.datasets.attack_flow import (
+        validate_attack_flow,
+        AttackFlowValidationResult,
+        _attack_flow_available,
+    )
+
+    flow = tmp_path / "attack_flow.json"
+    flow.write_text(json.dumps({"type": "bundle", "id": "bundle--x", "objects": []}))
+
+    result = validate_attack_flow(flow)
+    assert isinstance(result, AttackFlowValidationResult)
+    # Well-formed JSON is never reported as a JSON parse error.
+    assert "not valid JSON" not in (result.reason or "")
+
+    if not _attack_flow_available():
+        # Package absent: skipped, and skip counts as non-failure via __bool__.
+        assert result.skipped is True
+        assert bool(result) is True
 
 
 def test_semver_validation():
