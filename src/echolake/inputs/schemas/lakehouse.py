@@ -55,6 +55,11 @@ class LakehouseBronzeSchema(InputSchema):
             metadata=metadata,
             format=format_type,
             schema='lakehouse_bronze',
+            regex_originals=getattr(self.timestamp_extractor, '_regex_originals', {}).copy(),
+            regex_formats=getattr(self.timestamp_extractor, '_regex_formats', {}).copy(),
+            field_formats=getattr(self.timestamp_extractor, '_field_formats', {}).copy(),
+            field_originals=getattr(self.timestamp_extractor, '_field_originals', {}).copy(),
+            field_preserve=getattr(self.timestamp_extractor, '_field_preserve', {}).copy(),
         )
 
     def get_timestamp_patterns(self) -> List[Dict[str, Any]]:
@@ -88,6 +93,31 @@ class LakehouseBronzeSchema(InputSchema):
                 'field': '_ingest_time',
                 'format': 'iso8601',
                 'is_base': False,
+            },
+            # Timestamps carried INSIDE the `data` payload. These matter when
+            # the envelope is stripped for native raw emission: the downstream
+            # parser reads these, not the envelope, so leaving them unshifted
+            # would emit events stamped at their original capture time. They
+            # are never a base (the envelope fields own that) and they must
+            # round-trip in their native shape, not as ISO8601 strings.
+            {
+                'field': 'data._time',
+                'format': 'unix_seconds',
+                'is_base': False,
+                'preserve_format': True,
+            },
+            {
+                'field': 'data.TimeCreated',
+                'format': 'dotnet_date',
+                'is_base': False,
+                'preserve_format': True,
+            },
+            # Zeek writes its event time as `ts`, epoch seconds.
+            {
+                'field': 'data.ts',
+                'format': 'unix_seconds',
+                'is_base': False,
+                'preserve_format': True,
             },
         ]
 

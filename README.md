@@ -51,6 +51,13 @@ echolake echo \
   --target-time now-2h \
   --delta-factor 1.5
 
+# Emit the Lakewatch bronze envelope instead of the native raw log
+echolake echo \
+  --input ./logs \
+  --output ./replayed \
+  --input-schema lakehouse_bronze \
+  --emit bronze
+
 # Dry-run to preview (no output written)
 echolake echo \
   --input ./logs \
@@ -93,6 +100,7 @@ echo:
   target_time: now-2h  # now, now-1d, or ISO8601 timestamp
   prevent_future: true
   ceiling_time: now  # Maximum allowed timestamp
+  emit: raw  # raw = native log as the source produced it, bronze = keep the Lakewatch envelope
 
 input:
   source:
