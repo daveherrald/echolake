@@ -34,16 +34,24 @@ class TimestampExtractor:
         # overwriting the entire field value.
         self._regex_originals = {}
         self._regex_formats = {}
+        # Format that actually parsed each field, plus the original value, so
+        # writeback can round-trip a native payload field instead of coercing
+        # every timestamp to an ISO8601 string.
+        self._field_formats = {}
+        self._field_originals = {}
+        self._field_preserve = {}
 
         for pattern in self.patterns:
             # Handle both dict and Pydantic model patterns
             if isinstance(pattern, dict):
                 field = pattern.get("field")
                 format_type = pattern.get("format", "iso8601")
+                preserve = pattern.get("preserve_format", False)
             else:
                 # Assume it's a Pydantic model (has attributes)
                 field = getattr(pattern, "field", None)
                 format_type = getattr(pattern, "format", "iso8601")
+                preserve = getattr(pattern, "preserve_format", False)
 
             if field is None:
                 continue
@@ -65,6 +73,9 @@ class TimestampExtractor:
                     dt = parse_timestamp(value, format_type)
                     if dt:
                         timestamps[field] = dt
+                        self._field_formats[field] = format_type
+                        self._field_originals[field] = value
+                        self._field_preserve[field] = preserve
                 except (ValueError, TypeError):
                     # Skip unparseable timestamps
                     pass

@@ -147,6 +147,19 @@ class EchoConfig(BaseModel):
         default=False,
         description="Passthrough: emit events with original timestamps and skip the Phase 1 scan (no _time or _raw changes)"
     )
+    emit: str = Field(
+        default="raw",
+        description="Emission shape: 'raw' emits the native log the source produced, 'bronze' keeps the Lakewatch bronze envelope around it"
+    )
+
+    @field_validator('emit')
+    @classmethod
+    def validate_emit(cls, v: str) -> str:
+        """Validate emission shape."""
+        allowed = {"raw", "bronze"}
+        if v not in allowed:
+            raise ValueError(f"emit must be one of {sorted(allowed)}, got {v!r}")
+        return v
 
     @field_validator('delta_factor')
     @classmethod

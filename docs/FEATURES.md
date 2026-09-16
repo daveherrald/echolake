@@ -1507,6 +1507,7 @@ output:
 - **[TIME_EXPRESSIONS.md](TIME_EXPRESSIONS.md)** - Time expression syntax
 - **[DRY_RUN_MODE.md](DRY_RUN_MODE.md)** - Dry run mode details
 - **[TIMESTAMP_MANIPULATION.md](TIMESTAMP_MANIPULATION.md)** - Timestamp manipulation guide
+- **[EMISSION_SHAPE.md](EMISSION_SHAPE.md)** - Native raw vs Lakewatch bronze output (`--emit`)
 - **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
 - **[README.md](../README.md)** - Project overview
 

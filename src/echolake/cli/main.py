@@ -100,6 +100,11 @@ def echo(
         "--no-shift",
         help="Passthrough: emit events with their original timestamps and skip the Phase 1 scan (no _time or _raw changes)",
     ),
+    emit: str = typer.Option(
+        "raw",
+        "--emit",
+        help="Emission shape: 'raw' (default) emits the native log the source produced; 'bronze' keeps the Lakewatch bronze envelope around it",
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -260,6 +265,9 @@ def echo(
 
         if no_shift:
             cfg.echo.no_shift = True
+
+        if emit:
+            cfg.echo.emit = emit
 
         if path_template and cfg.output:
             # If the output URL included a prefix (e.g. s3://bucket/prefix),
