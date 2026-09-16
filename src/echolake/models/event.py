@@ -20,6 +20,9 @@ class Event:
         schema: Optional schema name (lakehouse_bronze, ocsf, etc.)
         regex_originals: Original matched strings for regex-extracted timestamps
         regex_formats: Format types for regex-extracted timestamps (unix_seconds, iso8601, etc.)
+        field_formats: Format that actually parsed each timestamp field
+        field_originals: Original pre-shift value of each timestamp field
+        field_preserve: Fields whose native on-the-wire format must be preserved on writeback
     """
     raw_data: Union[str, dict, Any]
     timestamps: Dict[str, datetime] = field(default_factory=dict)
@@ -28,6 +31,9 @@ class Event:
     schema: Optional[str] = None
     regex_originals: Dict[str, str] = field(default_factory=dict)
     regex_formats: Dict[str, str] = field(default_factory=dict)
+    field_formats: Dict[str, str] = field(default_factory=dict)
+    field_originals: Dict[str, Any] = field(default_factory=dict)
+    field_preserve: Dict[str, bool] = field(default_factory=dict)
 
     def apply_timestamp_shift(
         self,
@@ -61,6 +67,54 @@ class Event:
         )
         return new_event
 
+
+
+    @staticmethod
+    def _fractional_digits(value: str) -> int:
+        """Count digits after the decimal point in a numeric string."""
+        return len(value.split('.')[1]) if '.' in value else 0
+
+    def _preserve_shape(self, field_name: str, new_ts: datetime) -> Any:
+        """Render a shifted timestamp in the same format and type as the original.
+
+        Falls back to ISO8601 only when the original shape is unknown.
+        """
+        fmt = self.field_formats.get(field_name, "iso8601")
+        original = self.field_originals.get(field_name)
+
+        if fmt == "unix_seconds":
+            ts = new_ts.timestamp()
+            if isinstance(original, int):
+                # A whole-second field cannot carry a fractional shift, so it
+                # lands on the nearest second rather than truncating toward it.
+                # Such a field stays exact only to its own one-second
+                # resolution, which can leave it up to half a second from a
+                # millisecond-precision sibling in the same event.
+                return round(ts)
+            if isinstance(original, float):
+                # Keep the source's precision, but never render coarser than a
+                # millisecond. A source that happened to write `.25` would
+                # otherwise round the shifted value to centiseconds and drift
+                # from the millisecond-precision siblings (TimeCreated, the
+                # envelope's ISO times) that describe the same instant.
+                return round(ts, max(self._fractional_digits(str(original)), 3))
+            if isinstance(original, str):
+                decimals = self._fractional_digits(original)
+                return f"{ts:.{decimals}f}" if decimals else str(int(ts))
+            return ts
+
+        if fmt == "unix_millis":
+            ms = int(new_ts.timestamp() * 1000)
+            return ms if isinstance(original, (int, float)) else str(ms)
+
+        if fmt == "dotnet_date":
+            return format_timestamp(new_ts, "dotnet_date")
+
+        if fmt in ("iso8601", "rfc3339"):
+            return new_ts.isoformat()
+
+        return format_timestamp(new_ts, fmt)
+
     def apply_timestamp_shifts(self, shift_map: Dict[str, timedelta]) -> 'Event':
         """
         Apply timestamp shifts using a shift map from TimestampManipulator.
@@ -87,7 +141,12 @@ class Event:
             timestamps=new_timestamps,
             metadata=self.metadata.copy(),
             format=self.format,
-            schema=self.schema
+            schema=self.schema,
+            regex_originals=self.regex_originals.copy(),
+            regex_formats=self.regex_formats.copy(),
+            field_formats=self.field_formats.copy(),
+            field_originals=self.field_originals.copy(),
+            field_preserve=self.field_preserve.copy(),
         )
         return new_event
 
@@ -135,6 +194,12 @@ class Event:
                         )
                     else:
                         current[path[-1]] = new_ts_str
+                elif self.field_preserve.get(field_name):
+                    # Round-trip the field in its own on-the-wire shape. Native
+                    # payload fields are read by downstream parsers that expect
+                    # the original type and format, so coercing them to an
+                    # ISO8601 string would make the event unparseable.
+                    current[path[-1]] = self._preserve_shape(field_name, new_ts)
                 else:
                     # Direct field replacement
                     current[path[-1]] = new_ts.isoformat()

@@ -66,6 +66,15 @@ _EPOCH_RE = re.compile(
     r'"(?:timestamp|time|_time)"\s*:\s*(\d{10})(?!\d)'
 )
 
+# 15. Bare leading epoch with fractional seconds (squid access log:
+#     "1773794111.062     31 192.168.4.26 TCP_MISS/200 ..."). Anchored to the
+#     start of a line and required to be followed by whitespace, so it cannot
+#     swallow a bare number occurring mid-record.
+_LEADING_EPOCH_RE = re.compile(
+    r'^(\d{10}\.\d{1,6})(?=\s)',
+    re.MULTILINE,
+)
+
 # 7. PAN-OS date: YYYY/MM/DD HH:MM:SS (multiple per row in pan:traffic/threat)
 _PANOS_RE = re.compile(
     r'(\d{4}/\d{2}/\d{2})\s+(\d{2}:\d{2}:\d{2})'
@@ -269,6 +278,15 @@ def _handle_epoch(m, original_base, new_base, delta_factor, ceiling):
     return m.group(0).replace(epoch_str, new_epoch, 1)
 
 
+def _handle_leading_epoch(m, original_base, new_base, delta_factor, ceiling):
+    epoch_str = m.group(1)
+    original_ts = datetime.fromtimestamp(float(epoch_str), tz=timezone.utc)
+    new_ts = _shift_ts(original_ts, original_base, new_base, delta_factor, ceiling)
+    # Keep the source's fractional width so the line's shape is unchanged.
+    decimals = len(epoch_str.split('.')[1])
+    return f'{new_ts.timestamp():.{decimals}f}'
+
+
 def _handle_panos(m, original_base, new_base, delta_factor, ceiling):
     date_str, time_str = m.group(1), m.group(2)
     original_ts = datetime.strptime(
@@ -403,12 +421,13 @@ _P_COMPACT =    (_COMPACT_DT_RE,    _handle_compact_dt)
 _P_EPOCH_MS =   (_EPOCH_MS_RE,      _handle_epoch_ms)
 _P_DOTNET =     (_DOTNET_DATE_RE,   _handle_dotnet_date)
 _P_EPOCH =      (_EPOCH_RE,         _handle_epoch)
+_P_LEAD_EPOCH = (_LEADING_EPOCH_RE, _handle_leading_epoch)
 
 # All patterns (priority order) - used as fallback for unknown sourcetypes
 _ALL_PATTERNS = [
     _P_ISO8601, _P_FORTIGATE, _P_AUDIT, _P_SYSLOG, _P_US_DATE,
     _P_CLF, _P_APACHE_ERR, _P_CTIME, _P_PANOS, _P_DATETIME,
-    _P_COMPACT, _P_EPOCH_MS, _P_DOTNET, _P_EPOCH,
+    _P_COMPACT, _P_EPOCH_MS, _P_DOTNET, _P_EPOCH, _P_LEAD_EPOCH,
 ]
 
 # Sourcetype → relevant patterns (only run what's needed)
@@ -630,8 +649,13 @@ def _get_patterns_for_sourcetype(sourcetype: Optional[str]):
     # date=.. time=.. is listed before _P_DATETIME so it claims that span
     # instead of the generic datetime pattern. _P_EPOCH is safe here because
     # its regex only matches epochs behind a "timestamp"/"time"/"_time" JSON
-    # key, so bare 10-digit numbers are not touched.
-    return [_P_ISO8601, _P_FORTIGATE, _P_SYSLOG, _P_US_DATE, _P_EPOCH, _P_DATETIME]
+    # key, so bare 10-digit numbers are not touched. _P_LEAD_EPOCH is likewise
+    # safe: it is anchored to the start of a line and requires a fractional
+    # part followed by whitespace, which a bare number in the body of a record
+    # will not satisfy. Datasets often declare no sourcetype at all, so an
+    # epoch-prefixed line (squid access logs) only gets shifted if it is here.
+    return [_P_ISO8601, _P_FORTIGATE, _P_SYSLOG, _P_US_DATE, _P_EPOCH,
+            _P_DATETIME, _P_LEAD_EPOCH]
 
 
 # ---------------------------------------------------------------------------
