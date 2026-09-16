@@ -41,6 +41,10 @@ dependencies = [
 s3 = ["boto3>=1.28.0"]
 gcs = ["google-cloud-storage>=2.10.0"]
 azure = ["azure-storage-blob>=12.19.0"]
+# MITRE Attack Flow validation. The CTID attack-flow package is not published on
+# PyPI, so it is referenced from its Git source. Optional: dataset manifests parse
+# and validate-dataset works without it; only the Attack Flow schema check needs it.
+attack-flow = ["attack-flow @ git+https://github.com/center-for-threat-informed-defense/attack-flow.git"]
 cloud = [
     "boto3>=1.28.0",
     "google-cloud-storage>=2.10.0",
