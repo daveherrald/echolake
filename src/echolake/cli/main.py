@@ -483,6 +483,25 @@ def validate_set(
             else:
                 console.print(f"\n[green]✓[/green] All bundled files exist ({len(manifest.files.bundled)} files)")
 
+        # Validate a referenced Attack Flow document, if present. This is a
+        # non-fatal, best-effort check: it is skipped (not failed) when the
+        # optional attack-flow package is not installed.
+        if manifest.metadata.attack_flow is not None:
+            from ..datasets.attack_flow import validate_attack_flow
+
+            base_path = manifest_path.parent if manifest_path.name == "dataset.yaml" else manifest_path.parent.parent
+            flow_path = base_path / manifest.metadata.attack_flow.path
+            result = validate_attack_flow(flow_path)
+            if result.skipped:
+                console.print(f"\n[yellow]⚠[/yellow] Attack Flow present but not validated: {result.reason}")
+            elif result.valid:
+                console.print(f"\n[green]✓[/green] Attack Flow is valid: {manifest.metadata.attack_flow.path}")
+            else:
+                console.print(f"\n[red]Attack Flow validation failed:[/red] {result.reason}")
+                for err in result.errors:
+                    console.print(f"  - {err}")
+                raise typer.Exit(1)
+
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
@@ -857,7 +876,7 @@ def list_sets(
         echolake list-datasets --local-only
     """
     try:
-        from ..datasets.registry import LogSetRegistry
+        from ..datasets.registry import DatasetRegistry
         from ..datasets.resolver import DatasetResolver
 
         if local_only:
@@ -886,7 +905,7 @@ def list_sets(
             console.print(table)
         else:
             # List from repositories
-            registry = LogSetRegistry()
+            registry = DatasetRegistry()
 
             if not registry.repositories:
                 console.print("[yellow]No repositories configured[/yellow]")
@@ -963,9 +982,9 @@ def search_sets(
         echolake search-datasets "authentication" --search-in tags
     """
     try:
-        from ..datasets.registry import LogSetRegistry
+        from ..datasets.registry import DatasetRegistry
 
-        registry = LogSetRegistry()
+        registry = DatasetRegistry()
 
         if not registry.repositories:
             console.print("[yellow]No repositories configured[/yellow]")
