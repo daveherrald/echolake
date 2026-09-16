@@ -7,6 +7,11 @@ import re
 from dateutil import parser as date_parser
 
 
+# Microsoft JSON date wire format, e.g. /Date(1782746483162)/ with an optional
+# trailing UTC offset that we deliberately ignore (the epoch part is already UTC).
+_DOTNET_DATE_RE = re.compile(r'^/Date\((-?\d+)(?:[+-]\d{4})?\)/$')
+
+
 def parse_timestamp(
     value: Union[str, int, float, datetime],
     format: str = "iso8601"
@@ -61,6 +66,15 @@ def parse_timestamp(
             return datetime.fromtimestamp(float(value) / 1000.0, tz=timezone.utc)
         raise ValueError(f"Expected number for unix_millis, got {type(value)}")
 
+    elif format == "dotnet_date":
+        # Microsoft JSON date: /Date(1782746483162)/ or /Date(1782746483162-0700)/
+        if not isinstance(value, str):
+            raise ValueError(f"Expected string for dotnet_date, got {type(value)}")
+        m = _DOTNET_DATE_RE.match(value.strip())
+        if not m:
+            raise ValueError(f"Not a .NET JSON date: {value!r}")
+        return datetime.fromtimestamp(int(m.group(1)) / 1000.0, tz=timezone.utc)
+
     else:
         # Assume it's a strftime pattern
         if isinstance(value, str):
@@ -89,7 +103,13 @@ def format_timestamp(dt: datetime, format: str = "iso8601") -> str:
         return str(int(dt.timestamp()))
 
     elif format == "unix_millis":
-        return str(int(dt.timestamp() * 1000))
+        return str(round(dt.timestamp() * 1000))
+
+    elif format == "dotnet_date":
+        # Round rather than truncate: truncating here while the epoch-seconds
+        # path rounds would leave two fields describing the same instant a
+        # millisecond apart.
+        return f"/Date({round(dt.timestamp() * 1000)})/"
 
     else:
         # Assume it's a strftime pattern
