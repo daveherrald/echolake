@@ -65,6 +65,16 @@ WinEventLog:
     format: iso8601
     is_base: true
 
+# VPC flow log records as JSON objects (one key per flow-log field)
+"aws:vpcflow:json":
+  - field: start
+    format: unix_seconds
+    is_base: true
+    preserve_format: true
+  - field: end
+    format: unix_seconds
+    preserve_format: true
+
 # === Azure ===
 "azure:monitor:aad":
   - field: time
@@ -197,12 +207,95 @@ zscalernss-web:
   - field: ProcessStartTime
     format: unix_seconds
 
+# Falcon Data Replicator JSON. Sensor events carry `timestamp` as an epoch-ms
+# string; Falcon API audit events carry it as ISO8601 plus epoch-ms
+# UTCTimestamp/ActionTimestamp. Second-resolution fields are epoch-seconds strings.
+"crowdstrike:fdr":
+  - field: timestamp
+    format: unix_millis
+    is_base: true
+    preserve_format: true
+  - field: timestamp
+    format: iso8601
+    is_base: true
+    preserve_format: true
+  - field: UTCTimestamp
+    format: unix_millis
+    preserve_format: true
+  - field: ActionTimestamp
+    format: unix_millis
+    preserve_format: true
+  - field: ProcessStartTime
+    format: unix_seconds
+    preserve_format: true
+  - field: ProcessEndTime
+    format: unix_seconds
+    preserve_format: true
+  - field: ContextTimeStamp
+    format: unix_seconds
+    preserve_format: true
+  - field: ChangeTime
+    format: unix_seconds
+    preserve_format: true
+  - field: LogonTime
+    format: unix_seconds
+    preserve_format: true
+  - field: CreationTimeStamp
+    format: unix_seconds
+    preserve_format: true
+  - field: ConnectTime
+    format: unix_seconds
+    preserve_format: true
+  - field: PreviousConnectTime
+    format: unix_seconds
+    preserve_format: true
+  - field: BatchTimestamp
+    format: unix_seconds
+    preserve_format: true
+  - field: AgentLocalTime
+    format: unix_seconds
+    preserve_format: true
+  - field: DeviceTimeStamp
+    format: unix_seconds
+    preserve_format: true
+  - field: LinuxBootTime
+    format: unix_seconds
+    preserve_format: true
+
+# === GitHub ===
+# GitHub audit log stream (epoch-ms integers)
+"github:audit":
+  - field: timestamp
+    format: unix_millis
+    is_base: true
+    preserve_format: true
+  - field: created_at
+    format: unix_millis
+    preserve_format: true
+  - field: expires_at
+    format: unix_millis
+    preserve_format: true
+
 # === Linux / Unix ===
 "linux:audit":
   - field: line
     regex: 'msg=audit\((\d+\.\d+):\d+\)'
     format: unix_seconds
     is_base: true
+
+# auth.log lines shipped by Vector: the syslog line is in `message` (RFC3339
+# with microseconds); Vector's own `timestamp` is ISO8601 or epoch seconds.
+"linux_secure:vector":
+  - field: message
+    regex: '^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})'
+    format: iso8601
+    is_base: true
+  - field: timestamp
+    format: unix_seconds
+    preserve_format: true
+  - field: timestamp
+    format: iso8601
+    preserve_format: true
 
 syslog:
   # Generic syslog - try embedded ISO timestamp first

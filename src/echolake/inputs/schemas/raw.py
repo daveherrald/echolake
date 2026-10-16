@@ -87,6 +87,9 @@ class RawSchema(InputSchema):
             schema=None,
             regex_originals=regex_originals,
             regex_formats=regex_formats,
+            field_formats=getattr(extractor, '_field_formats', {}).copy(),
+            field_originals=getattr(extractor, '_field_originals', {}).copy(),
+            field_preserve=getattr(extractor, '_field_preserve', {}).copy(),
         )
 
     def get_timestamp_patterns(self) -> List[Dict[str, Any]]:
