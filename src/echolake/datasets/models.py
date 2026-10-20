@@ -1,5 +1,6 @@
 """Pydantic models for dataset manifests."""
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -326,6 +327,223 @@ class DatasetDefaults(BaseModel):
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Scenario entities, observables, and kill chain (STIX 2.1 vocabulary)
+# ---------------------------------------------------------------------------
+# These three blocks describe WHO and WHAT is in an attack dataset in the same
+# vocabulary as the companion Attack Flow file, which is a STIX 2.1 bundle:
+#   entities    -> STIX Domain Objects (infrastructure, identity, threat-actor,
+#                  tool, malware) or the user-account observable, each exposed in
+#                  the flow as an attack-asset
+#   observables -> STIX Cyber-observable Objects (ipv4-addr, domain-name, file,
+#                  process, windows-registry-key, ...) plus a STIX indicator when
+#                  the observable is an indicator of compromise
+#   kill_chain  -> ordered stages that become attack-action objects
+# Entries carry a local `id` handle so stages and entities can reference each
+# other; the Attack Flow builder resolves handles to STIX identifiers.
+
+STIX_ENTITY_TYPES = {
+    "infrastructure", "identity", "threat-actor", "intrusion-set", "campaign",
+    "tool", "malware", "user-account",
+}
+STIX_OBSERVABLE_TYPES = {
+    "ipv4-addr", "ipv6-addr", "mac-addr", "domain-name", "url", "email-addr",
+    "email-message", "file", "directory", "process", "user-account",
+    "windows-registry-key", "network-traffic", "software", "mutex",
+    "x509-certificate", "artifact", "autonomous-system", "indicator",
+}
+# Observable types whose single defining property is `value`.
+STIX_VALUE_OBSERVABLES = {"ipv4-addr", "ipv6-addr", "mac-addr", "domain-name", "url", "email-addr"}
+# STIX 2.1 indicator-type-ov
+STIX_INDICATOR_TYPES = {
+    "anomalous-activity", "anonymization", "benign", "compromised",
+    "malicious-activity", "attribution", "unknown",
+}
+# MITRE ATT&CK Enterprise tactic slugs (kill_chain_name "mitre-attack") -> tactic id
+ATTACK_TACTICS = {
+    "reconnaissance": "TA0043", "resource-development": "TA0042",
+    "initial-access": "TA0001", "execution": "TA0002", "persistence": "TA0003",
+    "privilege-escalation": "TA0004", "defense-evasion": "TA0005",
+    "credential-access": "TA0006", "discovery": "TA0007",
+    "lateral-movement": "TA0008", "collection": "TA0009",
+    "command-and-control": "TA0011", "exfiltration": "TA0010", "impact": "TA0040",
+}
+_HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def _check_handle(v: str) -> str:
+    if not _HANDLE_RE.match(v):
+        raise ValueError(
+            f"id must be a lowercase handle (letters, digits, '.', '_', '-'): {v!r}"
+        )
+    return v
+
+
+def _check_techniques(ids: List[str]) -> List[str]:
+    for t in ids:
+        if not re.match(r"^T\d{4}(\.\d{3})?$", t):
+            raise ValueError(f"technique must look like T1234 or T1234.001: {t!r}")
+    return ids
+
+
+class ScenarioEntity(BaseModel):
+    """A host, account, organization, adversary, tool, or attacker infrastructure.
+
+    `type` is the STIX 2.1 object type used to represent it. STIX-specific
+    properties (``infrastructure_types``, ``identity_class``, ``account_login``,
+    ``account_type``, ``is_service_account``, ``threat_actor_types``, ``sectors``,
+    ``tool_types``, ``aliases``, ...) are passed through as given and validated
+    by the STIX library when the Attack Flow is built.
+    """
+
+    model_config = {"extra": "allow"}
+
+    id: str = Field(..., description="Local handle referenced by kill_chain stages and other entities")
+    type: str = Field(..., description="STIX 2.1 type: infrastructure, identity, threat-actor, tool, malware, user-account")
+    name: Optional[str] = Field(default=None, description="Display name (required for every type except user-account)")
+    description: Optional[str] = Field(default=None)
+    role: Optional[str] = Field(default=None, description="Role in the scenario, e.g. patient-zero, pivot, target, attacker, victim")
+    observables: List[str] = Field(
+        default_factory=list,
+        description="Handles of observables that compose this entity (an infrastructure's IP, FQDN, accounts); emitted as consists-of",
+    )
+
+    @field_validator("id")
+    @classmethod
+    def _v_id(cls, v: str) -> str:
+        return _check_handle(v)
+
+    @field_validator("type")
+    @classmethod
+    def _v_type(cls, v: str) -> str:
+        if v not in STIX_ENTITY_TYPES:
+            raise ValueError(f"entity type must be one of {sorted(STIX_ENTITY_TYPES)}: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def _v_required_by_type(self) -> "ScenarioEntity":
+        extra = self.model_extra or {}
+        if self.type == "user-account":
+            if not extra.get("account_login") and not extra.get("user_id"):
+                raise ValueError(f"entity {self.id!r}: user-account needs account_login or user_id")
+        elif not self.name:
+            raise ValueError(f"entity {self.id!r}: {self.type} needs a name")
+        if self.type == "identity" and not extra.get("identity_class"):
+            raise ValueError(f"entity {self.id!r}: identity needs identity_class (individual, organization, system, group, class, unknown)")
+        return self
+
+
+class ScenarioObservable(BaseModel):
+    """A STIX cyber-observable present in the data, optionally marked as an indicator.
+
+    `type` is a STIX 2.1 observable type (or ``indicator`` for a pattern-only
+    artifact such as a named pipe, carrying ``pattern`` and ``pattern_type``).
+    When ``indicator_types`` is set the builder also emits a STIX indicator with
+    a pattern over the observable, the given kill-chain phases and techniques,
+    and the confidence. STIX-specific properties (``hashes``, ``key``,
+    ``values``, ``command_line``, ``account_login``, ...) pass through as given.
+    """
+
+    model_config = {"extra": "allow"}
+
+    id: str = Field(..., description="Local handle referenced by entities and kill_chain stages")
+    type: str = Field(..., description="STIX 2.1 observable type, or 'indicator' for a pattern-only artifact")
+    value: Optional[str] = Field(default=None, description="The value for ipv4-addr, ipv6-addr, mac-addr, domain-name, url, email-addr")
+    name: Optional[str] = Field(default=None, description="Name for file, process, mutex, software, or an indicator")
+    description: Optional[str] = Field(default=None)
+    indicator_types: List[str] = Field(default_factory=list, description="STIX indicator-type-ov values; empty means a plain observable, not an indicator")
+    kill_chain_phases: List[str] = Field(default_factory=list, description="ATT&CK tactic slugs (kill_chain_name mitre-attack)")
+    techniques: List[str] = Field(default_factory=list, description="ATT&CK technique ids this observable evidences")
+    confidence: Optional[int] = Field(default=None, ge=0, le=100, description="STIX confidence, 0 to 100")
+    first_seen: Optional[str] = Field(default=None, description="ISO8601 UTC first appearance in the data")
+    last_seen: Optional[str] = Field(default=None, description="ISO8601 UTC last appearance in the data")
+    pattern: Optional[str] = Field(default=None, description="Pattern for type indicator")
+    pattern_type: Optional[str] = Field(default=None, description="stix, sigma, yara, snort, suricata, pcre")
+
+    @field_validator("id")
+    @classmethod
+    def _v_id(cls, v: str) -> str:
+        return _check_handle(v)
+
+    @field_validator("type")
+    @classmethod
+    def _v_type(cls, v: str) -> str:
+        if v not in STIX_OBSERVABLE_TYPES:
+            raise ValueError(f"observable type must be a STIX observable type or 'indicator': {v!r}")
+        return v
+
+    @field_validator("indicator_types")
+    @classmethod
+    def _v_ind(cls, v: List[str]) -> List[str]:
+        bad = [x for x in v if x not in STIX_INDICATOR_TYPES]
+        if bad:
+            raise ValueError(f"indicator_types must be from {sorted(STIX_INDICATOR_TYPES)}: {bad}")
+        return v
+
+    @field_validator("kill_chain_phases")
+    @classmethod
+    def _v_kcp(cls, v: List[str]) -> List[str]:
+        bad = [x for x in v if x not in ATTACK_TACTICS]
+        if bad:
+            raise ValueError(f"kill_chain_phases must be ATT&CK tactic slugs {sorted(ATTACK_TACTICS)}: {bad}")
+        return v
+
+    @field_validator("techniques")
+    @classmethod
+    def _v_tech(cls, v: List[str]) -> List[str]:
+        return _check_techniques(v)
+
+    @model_validator(mode="after")
+    def _v_required_by_type(self) -> "ScenarioObservable":
+        extra = self.model_extra or {}
+        if self.type in STIX_VALUE_OBSERVABLES and not self.value:
+            raise ValueError(f"observable {self.id!r}: {self.type} needs a value")
+        if self.type == "file" and not (self.name or extra.get("hashes")):
+            raise ValueError(f"observable {self.id!r}: file needs a name or hashes")
+        if self.type == "windows-registry-key" and not extra.get("key"):
+            raise ValueError(f"observable {self.id!r}: windows-registry-key needs key")
+        if self.type == "indicator" and not (self.pattern and self.pattern_type):
+            raise ValueError(f"observable {self.id!r}: indicator needs pattern and pattern_type")
+        if self.type == "user-account" and not (extra.get("account_login") or extra.get("user_id")):
+            raise ValueError(f"observable {self.id!r}: user-account needs account_login or user_id")
+        return self
+
+
+class KillChainStage(BaseModel):
+    """One ordered stage of the attack; becomes one attack-action per technique."""
+
+    id: str = Field(..., description="Stage handle, e.g. S0")
+    name: str = Field(..., description="Short stage name")
+    description: Optional[str] = Field(default=None)
+    tactic: Optional[str] = Field(default=None, description="ATT&CK tactic slug for the stage")
+    techniques: List[str] = Field(..., min_length=1, description="ATT&CK technique ids, one attack-action each")
+    assets: List[str] = Field(default_factory=list, description="Entity handles involved (attack-action asset_refs)")
+    observables: List[str] = Field(default_factory=list, description="Observable handles evidencing the stage (related-to the action)")
+    execution_start: Optional[str] = Field(default=None, description="ISO8601 UTC")
+    execution_end: Optional[str] = Field(default=None, description="ISO8601 UTC")
+    next: Optional[List[str]] = Field(default=None, description="Following stage handles; defaults to the next stage in order")
+
+    @field_validator("id")
+    @classmethod
+    def _v_id(cls, v: str) -> str:
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", v):
+            raise ValueError(f"stage id must be a simple handle: {v!r}")
+        return v
+
+    @field_validator("tactic")
+    @classmethod
+    def _v_tactic(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ATTACK_TACTICS:
+            raise ValueError(f"tactic must be an ATT&CK tactic slug {sorted(ATTACK_TACTICS)}: {v!r}")
+        return v
+
+    @field_validator("techniques")
+    @classmethod
+    def _v_tech(cls, v: List[str]) -> List[str]:
+        return _check_techniques(v)
+
+
 class DatasetManifest(BaseModel):
     """Complete dataset manifest (dataset.yaml)."""
 
@@ -333,6 +551,39 @@ class DatasetManifest(BaseModel):
     files: DatasetFiles = Field(default_factory=DatasetFiles)
     dependencies: List[DatasetDependency] = Field(default_factory=list)
     defaults: Optional[DatasetDefaults] = Field(default=None)
+    entities: List[ScenarioEntity] = Field(default_factory=list, description="Scenario entities in STIX 2.1 vocabulary")
+    observables: List[ScenarioObservable] = Field(default_factory=list, description="Observables and indicators present in the data")
+    kill_chain: List[KillChainStage] = Field(default_factory=list, description="Ordered attack stages; source of the Attack Flow actions")
+
+    @model_validator(mode="after")
+    def _v_scenario_refs(self) -> "DatasetManifest":
+        """Every handle reference must resolve, and handles must be unique."""
+        ent = [e.id for e in self.entities]
+        obs = [o.id for o in self.observables]
+        stg = [k.id for k in self.kill_chain]
+        for label, ids in (("entities", ent), ("observables", obs), ("kill_chain", stg)):
+            dup = {x for x in ids if ids.count(x) > 1}
+            if dup:
+                raise ValueError(f"duplicate {label} ids: {sorted(dup)}")
+        obs_set, ent_set, stg_set = set(obs), set(ent), set(stg)
+        for e in self.entities:
+            missing = [h for h in e.observables if h not in obs_set]
+            if missing:
+                raise ValueError(f"entity {e.id!r} references unknown observables: {missing}")
+        for k in self.kill_chain:
+            missing = [h for h in k.assets if h not in ent_set]
+            if missing:
+                raise ValueError(f"stage {k.id!r} references unknown entities: {missing}")
+            missing = [h for h in k.observables if h not in obs_set]
+            if missing:
+                raise ValueError(f"stage {k.id!r} references unknown observables: {missing}")
+            if k.next:
+                missing = [h for h in k.next if h not in stg_set]
+                if missing:
+                    raise ValueError(f"stage {k.id!r} references unknown next stages: {missing}")
+        if self.kill_chain and not self.entities:
+            raise ValueError("kill_chain requires at least one entity")
+        return self
 
     @classmethod
     def from_file(cls, manifest_path: Union[str, Path]) -> 'DatasetManifest':

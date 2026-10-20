@@ -1562,3 +1562,108 @@ Use when:
 
 - Check the [EchoLake README](../README.md)
 - Review [example datasets](../tests/fixtures/)
+
+## Scenario metadata: entities, observables, kill_chain
+
+Multi-stage attack datasets carry three optional top-level blocks that describe
+who and what is in the scenario and in what order it unfolded. They use STIX 2.1
+vocabulary so they stay consistent with the companion MITRE Attack Flow file
+(itself a STIX 2.1 bundle), and `echolake build-attack-flow` derives that file
+from them, so the manifest is the single source of truth.
+
+**entities** (optional). The cast of the scenario. Each entry has a local `id`
+handle, a STIX 2.1 `type`, and the properties STIX defines for that type, which
+are passed through and validated by the STIX library at build time.
+
+- Hosts are `infrastructure` (STIX has no host type) with `infrastructure_types`
+  from the infrastructure-type open vocabulary (`workstation`, `control-system`,
+  `command-and-control`, `phishing`, and so on; the vocabulary is open, so
+  `domain-controller` or `jump-host` are allowed). List the handles of the
+  observables that compose the host (its `ipv4-addr`, `domain-name`, accounts)
+  under `observables`; they are linked with `consists-of`.
+- Accounts are `user-account` with `account_login`, `account_type`
+  (`windows-domain`, `windows-local`, `unix`, ...), and `is_service_account: true`
+  for service accounts.
+- The victim organization is `identity` with `identity_class: organization`.
+  The adversary is `threat-actor`. Attacker infrastructure such as C2 or a
+  phishing sender is `infrastructure` of type `command-and-control` or `phishing`.
+- `name`, `description`, and a free `role` (`patient-zero`, `pivot`, `target`,
+  `victim`, `attacker`) are carried into the flow's `attack-asset` objects.
+
+**observables** (optional). What a detection can key on. Each entry has a local
+`id` handle and a STIX 2.1 observable `type` (`ipv4-addr`, `domain-name`, `url`,
+`email-addr`, `file`, `windows-registry-key`, `user-account`, `mutex`, ...) with
+that type's properties (`value` for address-like types, `name` and `hashes` for
+a file, `key` and `values` for a registry key). Observables get the STIX
+canonical deterministic identifier, so the same IP or hash has the same id in
+every dataset. Model an executable by its `file` name rather than as a
+`process`, since process identifiers are never stable in STIX.
+
+Mark an indicator of compromise with `indicator_types` (STIX indicator-type
+vocabulary: `malicious-activity`, `anomalous-activity`, `compromised`, `benign`,
+`attribution`, `unknown`), `kill_chain_phases` (ATT&CK tactic slugs),
+`techniques` (ATT&CK ids), `confidence` (0 to 100), and `first_seen` /
+`last_seen`. The builder then also emits a STIX `indicator` with a pattern over
+the observable. Leave `indicator_types` empty for a plain asset identifier such
+as a victim host's IP. An artifact with no STIX observable type, such as a named
+pipe, is given `type: indicator` with an explicit `pattern` and `pattern_type`
+(`sigma` is the natural choice for a detection engineer).
+
+**kill_chain** (optional, requires entities). The ordered stages. Each stage has
+an `id` (`S0`, `S1`, ...), `name`, `description`, an ATT&CK `tactic` slug, one
+or more `techniques`, the entity handles involved (`assets`), the observable
+handles that evidence it (`observables`), and `execution_start` /
+`execution_end` in UTC. Stages chain in list order unless `next` names the
+following stages explicitly.
+
+```yaml
+entities:
+  - id: ws-01
+    type: infrastructure
+    name: CORP-WS-01
+    role: patient-zero
+    infrastructure_types: [workstation]
+    observables: [ws-01-ip]
+  - id: alice
+    type: user-account
+    account_login: alice
+    account_type: windows-domain
+    role: victim
+observables:
+  - id: ws-01-ip
+    type: ipv4-addr
+    value: 10.20.30.40
+  - id: c2-ip
+    type: ipv4-addr
+    value: 203.0.113.9
+    indicator_types: [malicious-activity]
+    kill_chain_phases: [command-and-control]
+    techniques: [T1071.001]
+    confidence: 70
+    first_seen: 2026-01-01T10:05:00Z
+kill_chain:
+  - id: S0
+    name: Initial access
+    tactic: initial-access
+    techniques: [T1566]
+    assets: [ws-01, alice]
+    execution_start: 2026-01-01T10:00:00Z
+  - id: S1
+    name: Beacon
+    tactic: command-and-control
+    techniques: [T1071.001]
+    assets: [ws-01]
+    observables: [c2-ip]
+    execution_start: 2026-01-01T10:05:00Z
+```
+
+Validation checks that every handle resolves and ids are unique. Build the
+flow with `echolake build-attack-flow <dataset-dir>`; it writes the bundle to
+`metadata.attack_flow.path` (default `attack_flow.json`) and validates it when
+the optional `attack-flow` package is installed. In the bundle: each entity
+becomes an `attack-asset` whose `object_ref` points at its STIX object; each
+stage becomes one `attack-action` per technique, chained with `effect_refs`,
+with `asset_refs` to its entities and `related-to` relationships from its
+observables; indicators are `based-on` their observable and `indicate` the
+entities that contain it. Identifiers are deterministic (UUIDv5), so a rebuild
+produces the same file.

@@ -521,6 +521,63 @@ def validate_set(
         raise typer.Exit(1)
 
 
+@app.command(name="build-attack-flow")
+def build_attack_flow_cmd(
+    path: Path = typer.Argument(
+        ...,
+        help="Path to dataset directory or dataset.yaml file",
+        exists=True,
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Where to write the bundle (default: metadata.attack_flow.path, or attack_flow.json beside the manifest)",
+    ),
+    validate: bool = typer.Option(
+        True,
+        "--validate/--no-validate",
+        help="Validate the written bundle with the attack-flow package (skipped if it is not installed)",
+    ),
+):
+    """
+    Build the MITRE Attack Flow bundle from a manifest's entities, observables, and kill_chain.
+
+    The manifest is the source of truth; the flow is derived from it with
+    deterministic identifiers, so rebuilding yields the same file.
+
+    Examples:
+        echolake build-attack-flow ./my-dataset/
+        echolake build-attack-flow ./my-dataset/dataset.yaml --output flow.json
+    """
+    import json as _json
+    from ..datasets.attack_flow_build import write_attack_flow, AttackFlowBuildError
+    from ..datasets.attack_flow import validate_attack_flow
+
+    manifest_path = path / "dataset.yaml" if path.is_dir() else path
+    if not manifest_path.exists():
+        console.print(f"[red]Error: Manifest file not found: {manifest_path}[/red]")
+        raise typer.Exit(1)
+    try:
+        out = write_attack_flow(manifest_path, output)
+    except AttackFlowBuildError as e:
+        console.print(f"[red]Attack Flow build failed: {e}[/red]")
+        raise typer.Exit(1)
+    n = len(_json.loads(out.read_text(encoding="utf-8")).get("objects", []))
+    console.print(f"[green]✓[/green] Attack Flow written: {out} ({n} objects)")
+    if validate:
+        result = validate_attack_flow(out)
+        if result.skipped:
+            console.print(f"[yellow]⚠[/yellow] Not validated: {result.reason}")
+        elif result.valid:
+            console.print("[green]✓[/green] Attack Flow is valid")
+        else:
+            console.print("[red]✗ Attack Flow is invalid:[/red]")
+            for err in result.errors:
+                console.print(f"  - {err}")
+            raise typer.Exit(1)
+
+
 @app.command(name="info-dataset")
 def info_set(
     path: Path = typer.Argument(
