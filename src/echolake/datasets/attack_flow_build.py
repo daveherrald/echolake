@@ -178,6 +178,12 @@ def _sco_class(stix2: Any, stype: str) -> Any:
     return table[stype]
 
 
+# STIX observable types that have a `name` property. For every other type the
+# manifest `name` is only a label for the derived indicator and must not reach
+# the STIX constructor.
+_NAMED_SCO_TYPES = {"file", "process", "mutex", "software"}
+
+
 def _build_sco(stix2: Any, ns: uuid.UUID, handle: str, stype: str, props: Dict[str, Any]) -> Any:
     """Construct a STIX observable. Canonical deterministic id where the spec
     defines one; a dataset-namespaced id for process, which the spec leaves random."""
@@ -189,6 +195,8 @@ def _build_sco(stix2: Any, ns: uuid.UUID, handle: str, stype: str, props: Dict[s
         ]
     if stype == "user-account" and "name" in props:
         props["display_name"] = props.pop("name")
+    elif stype not in _NAMED_SCO_TYPES:
+        props.pop("name", None)
     if stype == "process":
         props.setdefault("id", _sid(ns, "process", handle))
     try:
@@ -220,6 +228,8 @@ def _pattern_for(obs: ScenarioObservable, props: Dict[str, Any]) -> str:
         return f"[{t}:name = '{_escape(obs.name or '')}']"
     if t == "directory":
         return f"[directory:path = '{_escape(str(props.get('path')))}']"
+    if t == "email-message":
+        return f"[email-message:subject = '{_escape(str(props.get('subject', '')))}']"
     raise AttackFlowBuildError(f"observable {obs.id!r}: no pattern rule for type {t!r}; give it type indicator with an explicit pattern")
 
 
