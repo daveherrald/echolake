@@ -185,7 +185,7 @@ class BundledFile(BaseModel):
     @classmethod
     def validate_format(cls, v: str) -> str:
         """Validate file format."""
-        valid_formats = ["auto", "csv", "jsonl", "json", "text", "xml", "winevtxml"]
+        valid_formats = ["auto", "csv", "jsonl", "json", "text", "xml"]
         if v not in valid_formats:
             raise ValueError(f"Invalid format: {v}. Must be one of {valid_formats}")
         return v
@@ -232,7 +232,7 @@ class FileReference(BaseModel):
     @classmethod
     def validate_format(cls, v: str) -> str:
         """Validate file format."""
-        valid_formats = ["auto", "csv", "jsonl", "json", "text", "xml", "winevtxml"]
+        valid_formats = ["auto", "csv", "jsonl", "json", "text", "xml"]
         if v not in valid_formats:
             raise ValueError(f"Invalid format: {v}. Must be one of {valid_formats}")
         return v

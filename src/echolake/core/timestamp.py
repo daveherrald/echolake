@@ -56,6 +56,13 @@ class TimestampExtractor:
             if field is None:
                 continue
 
+            # First matching pattern wins. Pattern order is the precedence, so a
+            # later pattern (e.g. 'ts' as unix_millis) never overwrites an earlier
+            # successful one (e.g. 'ts' as unix_seconds). Without this, a Unix
+            # seconds value gets reread as milliseconds and lands in 1970.
+            if field in timestamps:
+                continue
+
             value = self._get_nested_field(data, field)
             if value is not None:
                 # Handle regex extraction (e.g., pulling timestamp from raw text)

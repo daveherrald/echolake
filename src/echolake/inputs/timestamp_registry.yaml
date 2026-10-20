@@ -12,11 +12,17 @@
 #   2. Sourcetype registry lookup (this file)
 #   3. Schema default patterns (raw.py 16-pattern list)
 
-# === Windows / Sysmon (XML-parsed -> dict with 'timestamp' from XML parser) ===
+# === Windows Event Log XML (in-place shift) ===
+# The event time is the TimeCreated SystemTime attribute in the Windows events
+# namespace. The document is preserved byte for byte; only SystemTime is shifted.
+# Payload times (Sysmon UtcTime, the rendered Message) move only with the
+# optional payload scan (echo.shift_payload), never by default.
 XmlWinEventLog:
-  - field: timestamp
+  - field: line
+    regex: '<TimeCreated[^>]*\bSystemTime="([^"]+)"'
     format: iso8601
     is_base: true
+    inplace: true
 
 WinEventLog:
   - field: timestamp
@@ -435,3 +441,65 @@ appdynamics_security:
     is_base: true
   - field: process_exec.process.start_time
     format: iso8601
+
+# ===========================================================================
+# EchoLake public datasets (currentis / paws / ctid): event-time definitions
+# ===========================================================================
+
+# Zeek JSON. Event time is the epoch-seconds `ts`; kept as epoch on output.
+"zeek:conn":
+  - field: ts
+    format: unix_seconds
+    is_base: true
+    preserve_format: true
+"zeek:dns":
+  - field: ts
+    format: unix_seconds
+    is_base: true
+    preserve_format: true
+"zeek:http":
+  - field: ts
+    format: unix_seconds
+    is_base: true
+    preserve_format: true
+
+# Slack export JSON. Event time is the epoch-seconds string `ts` (also the
+# message id); kept as a string epoch on output.
+slack:
+  - field: ts
+    format: unix_seconds
+    is_base: true
+    preserve_format: true
+
+# Squid / proxy access log (in-place). Event time is the leading epoch seconds.
+"squid:access":
+  - field: line
+    regex: '^(\d{10}(?:\.\d+)?)'
+    format: unix_seconds
+    is_base: true
+    inplace: true
+
+# Linux proxy-host log (in-place). One file carries two line shapes: Squid
+# access lines (leading epoch) and BSD syslog lines (Mon DD HH:MM:SS). Each line
+# is shifted by whichever event-time pattern matches it.
+"linux:syslog":
+  - field: line
+    regex: '^(\d{10}(?:\.\d+)?)'
+    format: unix_seconds
+    is_base: true
+    inplace: true
+  - field: line
+    regex: '^((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2})'
+    format: bsd_syslog
+    is_base: true
+    inplace: true
+
+# Microsoft Exchange message tracking (in-place). Event time is the leading ISO
+# on each record; the "#Date:" header line carries one too. Only the leading
+# timestamp is shifted (count=1), so embedded payload timestamps are left alone.
+"MSExchange:MessageTracking":
+  - field: line
+    regex: '^(?:#Date:\s)?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)'
+    format: iso8601
+    is_base: true
+    inplace: true

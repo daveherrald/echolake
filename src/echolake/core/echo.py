@@ -45,6 +45,7 @@ class EchoEngine:
         # Track dataset info (must be set before resolving)
         self.resolved_dataset = None
         self.file_sourcetype_map: Dict[str, str] = {}  # symlink filename -> sourcetype
+        self.file_format_map: Dict[str, str] = {}  # symlink filename -> input format
 
         # Resolve dataset if present
         if config.dataset:
@@ -103,9 +104,13 @@ class EchoEngine:
             }
 
         self.input_source = get_source(source_cfg.type, **source_kwargs)
-        # 'winevtxml' is a whole-file timestamp-shift mode, not an event parser.
-        self._textshift_mode = (input_cfg.format == 'winevtxml')
-        self.input_format = None if self._textshift_mode else get_format(input_cfg.format)
+        # Default input format; a per-file map (built during dataset resolution)
+        # lets a mixed dataset route each file to its own format. Files whose
+        # sourcetype defines an in-place (regex) event timestamp are shifted in
+        # place and never parsed; see _inplace_for.
+        self._default_format = input_cfg.format
+        self._format_handler_cache = {}
+        self.input_format = get_format(input_cfg.format)
 
         # Only pass timestamp_patterns if there are patterns defined or schema is raw/None
         schema_kwargs = {}
@@ -302,16 +307,6 @@ class EchoEngine:
                     "Check the input schema / timestamp field mapping, or use --no-shift."
                 )
 
-            # Whole-file timestamp shift (preserves the document, e.g. Windows Event XML).
-            if self._textshift_mode:
-                if not no_shift and not (original_base and new_base):
-                    raise ValueError(
-                        "winevtxml replay needs a base timestamp. Add a timestamp_range "
-                        "to the dataset metadata (none was found)."
-                    )
-                self._run_textshift(file_list, original_base, new_base, no_shift=no_shift)
-                return self.stats
-
             # Phase 2: Stream each file and process events individually (zero memory accumulation)
             if no_shift or (original_base and new_base):
                 from rich.console import Console
@@ -399,51 +394,124 @@ class EchoEngine:
 
         return self.stats
 
-    def _run_textshift(self, file_list, original_base, new_base, no_shift: bool = False):
-        """Replay by shifting timestamps in each file's text in place.
+    def _format_for(self, file_id: str) -> str:
+        """Input format for a specific file (per-file map, else the run default)."""
+        return self.file_format_map.get(Path(file_id).name) or self._default_format
 
-        Used for formats such as Windows Event XML, where the document must be
-        preserved byte-for-byte apart from its timestamps. Reuses the same
-        shifter as the ``_raw`` path, so every recognized timestamp moves by the
-        echo delta and the rest of the file is untouched.
+    def _handler_for(self, fmt: str):
+        """Cached format handler for a format name."""
+        if fmt not in self._format_handler_cache:
+            self._format_handler_cache[fmt] = get_format(fmt)
+        return self._format_handler_cache[fmt]
+
+    def _inplace_for(self, file_id) -> bool:
+        """True if this file's sourcetype defines its event timestamp by a regex.
+
+        Raw text and Windows Event XML logs are shifted in place, preserving the
+        file byte for byte apart from the timestamps, rather than parsed into events.
+        """
+        st = self.file_sourcetype_map.get(Path(file_id).name)
+        if not st:
+            return False
+        from ..inputs.timestamp_registry import TimestampRegistry
+        entry = TimestampRegistry.get().lookup(st)
+        if not entry:
+            return False
+        return any(p.get('is_base') and p.get('inplace') for p in entry)
+
+    def _inplace_shift_file(self, file_id, original_base, new_base, no_shift: bool = False,
+                            progress=None, task_id=None, file_size_bytes=0):
+        """Shift a raw text or XML log in place, preserving every byte but the timestamps.
+
+        The file's sourcetype entry in the timestamp registry defines where the
+        event timestamp is, by regex (the leading epoch in a Squid log, the
+        SystemTime attribute in a Windows event). Only that match is shifted by
+        default; the optional payload scan additionally shifts other timestamps by
+        the same delta. Applied per line, so it is bounded even on a 176 MB file.
         """
         import re
-        from rich.console import Console
-        console = Console()
+        from ..inputs.timestamp_registry import TimestampRegistry
+        from .raw_timestamp_shifter import _shift_ts, _format_iso8601
+        from ..utils.time import parse_timestamp
 
+        st = self.file_sourcetype_map.get(Path(file_id).name)
+        entry = TimestampRegistry.get().lookup(st) or []
+        compiled = [(re.compile(p['regex']), p.get('format', 'iso8601'))
+                    for p in entry if p.get('regex')]
+        df = self.config.echo.delta_factor
         ceiling = None
         if not no_shift and self.timestamp_manipulator.prevent_future:
             ceiling = self.timestamp_manipulator._calculate_ceiling_time()
-        delta_factor = self.config.echo.delta_factor
-        event_re = re.compile(r'<Event[\s>]')
-        sourcetype_map = getattr(self, 'file_sourcetype_map', {})
+        shift_payload = getattr(self.config.echo, 'shift_payload', False)
 
-        total_events = 0
-        for file_id in file_list:
-            text = b''.join(self.input_source.read_file(file_id)).decode('utf-8', errors='replace')
-            sourcetype = sourcetype_map.get(Path(file_id).name)
+        def shift_token(tok, fmt):
+            if fmt == 'bsd_syslog':
+                # BSD syslog header 'Mon DD HH:MM:SS' has no year; assume the base
+                # year and reformat month name + space-padded day (matches _handle_syslog).
+                import calendar
+                norm = re.sub(r'\s+', ' ', tok.strip())
+                try:
+                    o = datetime.strptime(norm, '%b %d %H:%M:%S').replace(
+                        year=original_base.year, tzinfo=timezone.utc)
+                except Exception:
+                    return tok
+                nw = _shift_ts(o, original_base, new_base, df, ceiling)
+                return f'{calendar.month_abbr[nw.month]} {nw.day:>2d} {nw.strftime("%H:%M:%S")}'
+            try:
+                orig = parse_timestamp(tok, fmt)
+            except Exception:
+                return tok
+            if orig.tzinfo is None:
+                orig = orig.replace(tzinfo=timezone.utc)
+            new = _shift_ts(orig, original_base, new_base, df, ceiling)
+            if fmt in ('unix_seconds', 'unix_millis'):
+                val = new.timestamp() * (1000.0 if fmt == 'unix_millis' else 1.0)
+                if '.' in tok:
+                    ndec = len(tok.split('.', 1)[1])
+                    return f'{val:.{ndec}f}'
+                return str(int(round(val)))
+            return _format_iso8601(new.astimezone(orig.tzinfo), tok)
 
-            if no_shift:
-                shifted = text
-            else:
-                shifted = shift_raw_timestamps(
-                    text, original_base, new_base, delta_factor, ceiling,
-                    sourcetype=sourcetype,
-                )
+        def make_repl(fmt):
+            def repl(m):
+                g0 = m.group(0)
+                s1, e1 = m.start(1) - m.start(0), m.end(1) - m.start(0)
+                return g0[:s1] + shift_token(m.group(1), fmt) + g0[e1:]
+            return repl
 
-            n = len(event_re.findall(text))
-            total_events += n
-            if not self.dry_run:
-                metadata = {'sourcetype': sourcetype} if sourcetype else None
-                self.output_destination.write(file_id, [shifted], metadata=metadata)
+        matched = 0
+        out = []
+        text = b''.join(self.input_source.read_file(file_id)).decode('utf-8', errors='replace')
+        for line in text.splitlines(keepends=True):
+            if not no_shift:
+                if shift_payload:
+                    # Opt-in: shift the event time AND every other recognized
+                    # timestamp in the line, each once (the scan is overlap-
+                    # protected), by the same delta. The broad scan already covers
+                    # the is_base formats, so the targeted pass is skipped here to
+                    # avoid shifting the event time twice.
+                    line = shift_raw_timestamps(
+                        line, original_base, new_base, df, ceiling, sourcetype=st)
+                else:
+                    # Default: shift only the registry-defined event timestamp.
+                    for rx, fmt in compiled:
+                        line, n = rx.subn(make_repl(fmt), line, count=1)
+                        matched += n
+            out.append(line)
+        shifted = ''.join(out)
 
-            self.stats.event_count += n
-            self.stats.events_modified += (0 if no_shift else n)
-
-        console.print(
-            f"[green]\u2713 Shifted timestamps in {len(file_list)} file(s), "
-            f"{total_events:,} events.[/green]"
-        )
+        if not self.dry_run:
+            metadata = {'sourcetype': st} if st else None
+            # The destination writes each record followed by a newline. The file
+            # text already ends in one, so drop it to keep the output byte-exact.
+            payload = shifted[:-1] if shifted.endswith('\n') else shifted
+            self.output_destination.write(file_id, [payload], metadata=metadata)
+        n_events = matched or shifted.count('\n')
+        with self._stats_lock:
+            self.stats.event_count += n_events
+            self.stats.events_modified += (0 if no_shift else matched)
+        if progress is not None and task_id is not None and file_size_bytes:
+            progress.advance(task_id, advance=file_size_bytes)
 
     def _stream_process_file(self, file_id: str, original_base: datetime, new_base: datetime, progress=None, task_id=None, file_size_bytes=0, no_shift: bool = False):
         """
@@ -459,6 +527,15 @@ class EchoEngine:
             task_id: Optional task ID for progress updates
             file_size_bytes: Size of file in bytes for progress tracking
         """
+        if self._inplace_for(file_id):
+            self._inplace_shift_file(
+                file_id, original_base, new_base, no_shift=no_shift,
+                progress=progress, task_id=task_id, file_size_bytes=file_size_bytes,
+            )
+            return
+        fmt = self._format_for(file_id)
+        input_format = self._handler_for(fmt)
+
         start_time = datetime.now(timezone.utc)
         UPDATE_INTERVAL = 1000  # Update every 1k events
         first_event = True
@@ -492,9 +569,9 @@ class EchoEngine:
         local_unflushed = 0  # events since last stats flush
 
         # Parse content stream (each format handles its own buffering)
-        for raw_data in self.input_format.parse(content_stream):
+        for raw_data in input_format.parse(content_stream):
             try:
-                event = self.input_schema.extract_event(raw_data, self.config.input.format, sourcetype=sourcetype)
+                event = self.input_schema.extract_event(raw_data, fmt, sourcetype=sourcetype)
                 local_event_count += 1
                 local_unflushed += 1
 
@@ -644,8 +721,10 @@ class EchoEngine:
         Args:
             file_id: File identifier from input source
         """
-        if self.input_format is None:
-            return  # whole-file text-shift mode does not scan events
+        if self._inplace_for(file_id):
+            return  # in-place shift reads raw text; base comes from registry/metadata
+        fmt = self._format_for(file_id)
+        input_format = self._handler_for(fmt)
         # Look up sourcetype for this file
         file_name_for_lookup = Path(file_id).name
         sourcetype = self.file_sourcetype_map.get(file_name_for_lookup)
@@ -654,9 +733,9 @@ class EchoEngine:
         content_stream = self.input_source.read_file(file_id)
 
         # Parse content stream (don't load all into memory with list())
-        for raw_data in self.input_format.parse(content_stream):
+        for raw_data in input_format.parse(content_stream):
             try:
-                event = self.input_schema.extract_event(raw_data, self.config.input.format, sourcetype=sourcetype)
+                event = self.input_schema.extract_event(raw_data, fmt, sourcetype=sourcetype)
 
                 # Track only min/max timestamps, discard everything else
                 for field, ts in event.timestamps.items():
@@ -952,23 +1031,28 @@ class EchoEngine:
                 for bf in resolved.manifest.files.bundled:
                     if hasattr(bf, 'sourcetype') and bf.sourcetype:
                         self.file_sourcetype_map[Path(bf.path).name] = bf.sourcetype
+                    if hasattr(bf, 'format') and bf.format:
+                        self.file_format_map[Path(bf.path).name] = bf.format
                 for fr in resolved.manifest.files.references:
-                    if hasattr(fr, 'sourcetype') and fr.sourcetype:
-                        # Map the cached filename (with hash prefix) to sourcetype
-                        cached_path = uri_to_cached.get(fr.uri)
-                        if cached_path:
-                            self.file_sourcetype_map[cached_path.name] = fr.sourcetype
+                    cached_path = uri_to_cached.get(fr.uri)
+                    if cached_path and hasattr(fr, 'sourcetype') and fr.sourcetype:
+                        self.file_sourcetype_map[cached_path.name] = fr.sourcetype
+                    if cached_path and hasattr(fr, 'format') and fr.format:
+                        self.file_format_map[cached_path.name] = fr.format
                 # Also check dependencies
                 if resolved.resolved_dependencies:
                     for dep in resolved.resolved_dependencies:
                         for bf in dep.manifest.files.bundled:
                             if hasattr(bf, 'sourcetype') and bf.sourcetype:
                                 self.file_sourcetype_map[Path(bf.path).name] = bf.sourcetype
+                            if hasattr(bf, 'format') and bf.format:
+                                self.file_format_map[Path(bf.path).name] = bf.format
                         for fr in dep.manifest.files.references:
-                            if hasattr(fr, 'sourcetype') and fr.sourcetype:
-                                cached_path = uri_to_cached.get(fr.uri)
-                                if cached_path:
-                                    self.file_sourcetype_map[cached_path.name] = fr.sourcetype
+                            cached_path = uri_to_cached.get(fr.uri)
+                            if cached_path and hasattr(fr, 'sourcetype') and fr.sourcetype:
+                                self.file_sourcetype_map[cached_path.name] = fr.sourcetype
+                            if cached_path and hasattr(fr, 'format') and fr.format:
+                                self.file_format_map[cached_path.name] = fr.format
 
                 # Determine format from dataset files or defaults
                 # Priority: dataset defaults > bundled file format > file reference format > 'text'

@@ -48,7 +48,7 @@ class InputConfig(BaseModel):
     @classmethod
     def validate_format(cls, v: str) -> str:
         """Validate input format."""
-        valid_formats = ["auto", "csv", "text", "json", "jsonl", "xml", "winevtxml"]
+        valid_formats = ["auto", "csv", "text", "json", "jsonl", "xml"]
         if v not in valid_formats:
             raise ValueError(f"Invalid format: {v}. Must be one of {valid_formats}")
         return v
@@ -146,6 +146,10 @@ class EchoConfig(BaseModel):
     no_shift: bool = Field(
         default=False,
         description="Passthrough: emit events with original timestamps and skip the Phase 1 scan (no _time or _raw changes)"
+    )
+    shift_payload: bool = Field(
+        default=False,
+        description="For in-place (raw text / Windows Event XML) logs, also shift payload timestamps beyond the defined event timestamp, by the same delta"
     )
 
     @field_validator('delta_factor')

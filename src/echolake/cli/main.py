@@ -100,6 +100,11 @@ def echo(
         "--no-shift",
         help="Passthrough: emit events with their original timestamps and skip the Phase 1 scan (no _time or _raw changes)",
     ),
+    shift_payload: bool = typer.Option(
+        False,
+        "--shift-payload",
+        help="For in-place (raw text / Windows Event XML) logs, also shift payload timestamps beyond the defined event timestamp, by the same delta",
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -260,6 +265,15 @@ def echo(
 
         if no_shift:
             cfg.echo.no_shift = True
+
+        if shift_payload:
+            cfg.echo.shift_payload = True
+
+        # Re-assign so the echo block is marked "set" on the config. Without this,
+        # model_dump(exclude_unset=True) in dataset resolution drops these CLI
+        # overrides and dataset defaults win. The dump still carries only the
+        # fields set above, so dataset delta/base/target defaults are preserved.
+        cfg.echo = cfg.echo
 
         if path_template and cfg.output:
             # If the output URL included a prefix (e.g. s3://bucket/prefix),

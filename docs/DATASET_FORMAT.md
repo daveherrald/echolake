@@ -483,12 +483,18 @@ files:
 - Examples: `"logs/file.jsonl"`, `"data/network/zeek.log"`
 
 **format** (optional, default: "jsonl")
-- Valid values: `"jsonl"`, `"json"`, `"text"`, `"xml"`, `"winevtxml"`
+- Valid values: `"jsonl"`, `"json"`, `"text"`, `"xml"`
 - Use `"jsonl"` for newline-delimited JSON (most common)
 - Use `"json"` for single JSON array/object
 - Use `"text"` for plain text or CSV
 - Use `"xml"` for XML format logs
-- Use `"winevtxml"` for Windows Event XML: shifts timestamps in place and preserves the document exactly
+
+**sourcetype** (optional, recommended)
+- Names the log type and maps the file to an entry in the timestamp registry (`src/echolake/inputs/timestamp_registry.yaml`)
+- The registry entry defines where the event timestamp is (the `is_base` pattern), which anchors the replay window
+- For `jsonl`, `json`, and `csv` files the event timestamp is read from a field and the record is re-serialized
+- For `text` and `xml` files whose registry entry marks the event timestamp `inplace: true` (for example `XmlWinEventLog`, `squid:access`, `MSExchange:MessageTracking`, `linux:syslog`), the file is shifted in place and kept byte for byte apart from its timestamps. This covers the Windows Event XML `SystemTime`, a Squid leading epoch, an Exchange leading ISO, and BSD syslog headers.
+- By default only the event timestamp moves. Run `echo --shift-payload` to also shift other timestamps found in the payload, by the same delta.
 
 **schema** (optional)
 - Valid values: `"raw"` (the default and only schema)
@@ -602,7 +608,10 @@ files:
 - Will be downloaded and cached locally on first use
 
 **format** (optional, default: "jsonl")
-- Same as bundled files: `"jsonl"`, `"json"`, `"text"`, `"xml"`, `"winevtxml"`
+- Same as bundled files: `"jsonl"`, `"json"`, `"text"`, `"xml"`
+
+**sourcetype** (optional, recommended)
+- Same as bundled files (maps to the timestamp registry)
 
 **schema** (optional)
 - Same as bundled files: `"raw"`
@@ -1082,7 +1091,7 @@ All datasets are validated when loaded using Pydantic models. Common validation 
 - ❌ `"/path/to/file"` - must have scheme
 
 #### Format Validation
-- ✅ `"jsonl"`, `"json"`, `"text"`, `"xml"`, `"winevtxml"`
+- ✅ `"jsonl"`, `"json"`, `"text"`, `"xml"`
 - ❌ `"csv"` - not supported (use "text")
 - ❌ `"parquet"` - not supported
 

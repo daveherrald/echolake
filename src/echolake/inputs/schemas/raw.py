@@ -105,10 +105,10 @@ class RawSchema(InputSchema):
         # Common timestamp field names
         return [
             {'field': 'timestamp', 'format': 'iso8601', 'is_base': True},
-            {'field': 'time', 'format': 'unix_millis', 'is_base': False},  # common unix-ms time field
+            {'field': 'time', 'format': 'unix_millis', 'is_base': False, 'preserve_format': True},  # common unix-ms time field
             {'field': 'time', 'format': 'iso8601', 'is_base': False},  # Also try ISO8601 for 'time'
-            {'field': 'ts', 'format': 'unix_seconds', 'is_base': False},
-            {'field': 'ts', 'format': 'unix_millis', 'is_base': False},
+            {'field': 'ts', 'format': 'unix_seconds', 'is_base': False, 'preserve_format': True},
+            {'field': 'ts', 'format': 'unix_millis', 'is_base': False, 'preserve_format': True},
             {'field': 'datetime', 'format': 'iso8601', 'is_base': False},
             {'field': 'event_time', 'format': 'iso8601', 'is_base': False},
             {'field': 'eventTime', 'format': 'iso8601', 'is_base': False},  # AWS CloudTrail
@@ -117,9 +117,9 @@ class RawSchema(InputSchema):
             {'field': 'created_at', 'format': 'iso8601', 'is_base': False},
             {'field': 'createdAt', 'format': 'iso8601', 'is_base': False},
             {'field': '_time', 'format': 'iso8601', 'is_base': False},
-            {'field': '_time', 'format': 'unix_seconds', 'is_base': False},
-            {'field': 'start_time', 'format': 'unix_millis', 'is_base': False},  # common unix-ms time field
-            {'field': 'end_time', 'format': 'unix_millis', 'is_base': False},  # common unix-ms time field
+            {'field': '_time', 'format': 'unix_seconds', 'is_base': False, 'preserve_format': True},
+            {'field': 'start_time', 'format': 'unix_millis', 'is_base': False, 'preserve_format': True},  # common unix-ms time field
+            {'field': 'end_time', 'format': 'unix_millis', 'is_base': False, 'preserve_format': True},  # common unix-ms time field
         ]
 
     def validate_event(self, raw_data: dict) -> bool:
