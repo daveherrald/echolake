@@ -282,6 +282,7 @@ def _relationship(stix2: Any, ns: uuid.UUID, rel: str, src: str, tgt: str, ts: s
         id=_sid(ns, "relationship", f"{rel}:{src}:{tgt}"),
         relationship_type=rel, source_ref=src, target_ref=tgt,
         created_by_ref=ECHOLAKE_IDENTITY_ID, created=ts, modified=ts,
+        allow_custom=True,  # targets may be Attack Flow objects (attack-action), a custom STIX type
     )
 
 
