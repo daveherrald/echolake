@@ -1,7 +1,7 @@
-"""Databricks-specific utilities and notebook-friendly API."""
+"""Notebook-friendly API for interactive replay."""
 
 from typing import Optional, Dict, Any
-from ..core.config import (
+from .core.config import (
     Config,
     InputConfig,
     InputSourceConfig,
@@ -10,19 +10,23 @@ from ..core.config import (
     EchoConfig,
     EchoStats,
 )
-from ..core.echo import EchoEngine
+from .core.echo import EchoEngine
 
 
 class Replay:
     """
-    Notebook-friendly API for EchoLake in Databricks.
+    Notebook-friendly API for EchoLake.
 
-    Example usage in Databricks notebook:
+    A small fluent wrapper around the engine for interactive use in a notebook.
+    Paths auto-detect their scheme, so local, S3, GCS, and DBFS (dbfs:/) inputs
+    and outputs all work.
+
+    Example usage in a notebook:
         from echolake import Replay
 
         replay = Replay()
-        replay.input_source("dbfs:/mnt/logs", format="jsonl", schema="raw")
-        replay.output_destination("dbfs:/mnt/replayed", format="jsonl")
+        replay.input_source("s3://my-bucket/logs", format="jsonl", schema="raw")
+        replay.output_destination("s3://my-bucket/replayed", format="jsonl")
         replay.set_timestamp_options(delta_factor=2.0, prevent_future=True)
         stats = replay.run()
         print(f"Replayed {stats.event_count} events")

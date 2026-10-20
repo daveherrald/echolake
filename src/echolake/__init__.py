@@ -10,7 +10,7 @@ __version__ = "0.1.0"
 # Core API
 from .core.config import Config, EchoConfig, EchoStats
 from .core.echo import EchoEngine
-from .databricks import Replay
+from .notebook import Replay
 from .models.event import Event
 
 # Backward compatibility aliases
