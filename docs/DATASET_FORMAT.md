@@ -483,11 +483,12 @@ files:
 - Examples: `"logs/file.jsonl"`, `"data/network/zeek.log"`
 
 **format** (optional, default: "jsonl")
-- Valid values: `"jsonl"`, `"json"`, `"text"`, `"xml"`
+- Valid values: `"jsonl"`, `"json"`, `"text"`, `"xml"`, `"winevtxml"`
 - Use `"jsonl"` for newline-delimited JSON (most common)
 - Use `"json"` for single JSON array/object
 - Use `"text"` for plain text or CSV
 - Use `"xml"` for XML format logs
+- Use `"winevtxml"` for Windows Event XML: shifts timestamps in place and preserves the document exactly
 
 **schema** (optional)
 - Valid values: `"raw"` (the default and only schema)
@@ -601,7 +602,7 @@ files:
 - Will be downloaded and cached locally on first use
 
 **format** (optional, default: "jsonl")
-- Same as bundled files: `"jsonl"`, `"json"`, `"text"`, `"xml"`
+- Same as bundled files: `"jsonl"`, `"json"`, `"text"`, `"xml"`, `"winevtxml"`
 
 **schema** (optional)
 - Same as bundled files: `"raw"`
@@ -1081,7 +1082,7 @@ All datasets are validated when loaded using Pydantic models. Common validation 
 - ❌ `"/path/to/file"` - must have scheme
 
 #### Format Validation
-- ✅ `"jsonl"`, `"json"`, `"text"`, `"xml"`
+- ✅ `"jsonl"`, `"json"`, `"text"`, `"xml"`, `"winevtxml"`
 - ❌ `"csv"` - not supported (use "text")
 - ❌ `"parquet"` - not supported
 

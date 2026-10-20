@@ -103,7 +103,9 @@ class EchoEngine:
             }
 
         self.input_source = get_source(source_cfg.type, **source_kwargs)
-        self.input_format = get_format(input_cfg.format)
+        # 'winevtxml' is a whole-file timestamp-shift mode, not an event parser.
+        self._textshift_mode = (input_cfg.format == 'winevtxml')
+        self.input_format = None if self._textshift_mode else get_format(input_cfg.format)
 
         # Only pass timestamp_patterns if there are patterns defined or schema is raw/None
         schema_kwargs = {}
@@ -300,6 +302,16 @@ class EchoEngine:
                     "Check the input schema / timestamp field mapping, or use --no-shift."
                 )
 
+            # Whole-file timestamp shift (preserves the document, e.g. Windows Event XML).
+            if self._textshift_mode:
+                if not no_shift and not (original_base and new_base):
+                    raise ValueError(
+                        "winevtxml replay needs a base timestamp. Add a timestamp_range "
+                        "to the dataset metadata (none was found)."
+                    )
+                self._run_textshift(file_list, original_base, new_base, no_shift=no_shift)
+                return self.stats
+
             # Phase 2: Stream each file and process events individually (zero memory accumulation)
             if no_shift or (original_base and new_base):
                 from rich.console import Console
@@ -386,6 +398,52 @@ class EchoEngine:
             self.stats.end_time = datetime.now(timezone.utc)
 
         return self.stats
+
+    def _run_textshift(self, file_list, original_base, new_base, no_shift: bool = False):
+        """Replay by shifting timestamps in each file's text in place.
+
+        Used for formats such as Windows Event XML, where the document must be
+        preserved byte-for-byte apart from its timestamps. Reuses the same
+        shifter as the ``_raw`` path, so every recognized timestamp moves by the
+        echo delta and the rest of the file is untouched.
+        """
+        import re
+        from rich.console import Console
+        console = Console()
+
+        ceiling = None
+        if not no_shift and self.timestamp_manipulator.prevent_future:
+            ceiling = self.timestamp_manipulator._calculate_ceiling_time()
+        delta_factor = self.config.echo.delta_factor
+        event_re = re.compile(r'<Event[\s>]')
+        sourcetype_map = getattr(self, 'file_sourcetype_map', {})
+
+        total_events = 0
+        for file_id in file_list:
+            text = b''.join(self.input_source.read_file(file_id)).decode('utf-8', errors='replace')
+            sourcetype = sourcetype_map.get(Path(file_id).name)
+
+            if no_shift:
+                shifted = text
+            else:
+                shifted = shift_raw_timestamps(
+                    text, original_base, new_base, delta_factor, ceiling,
+                    sourcetype=sourcetype,
+                )
+
+            n = len(event_re.findall(text))
+            total_events += n
+            if not self.dry_run:
+                metadata = {'sourcetype': sourcetype} if sourcetype else None
+                self.output_destination.write(file_id, [shifted], metadata=metadata)
+
+            self.stats.event_count += n
+            self.stats.events_modified += (0 if no_shift else n)
+
+        console.print(
+            f"[green]\u2713 Shifted timestamps in {len(file_list)} file(s), "
+            f"{total_events:,} events.[/green]"
+        )
 
     def _stream_process_file(self, file_id: str, original_base: datetime, new_base: datetime, progress=None, task_id=None, file_size_bytes=0, no_shift: bool = False):
         """
@@ -586,6 +644,8 @@ class EchoEngine:
         Args:
             file_id: File identifier from input source
         """
+        if self.input_format is None:
+            return  # whole-file text-shift mode does not scan events
         # Look up sourcetype for this file
         file_name_for_lookup = Path(file_id).name
         sourcetype = self.file_sourcetype_map.get(file_name_for_lookup)

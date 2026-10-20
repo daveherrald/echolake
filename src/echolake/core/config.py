@@ -48,7 +48,7 @@ class InputConfig(BaseModel):
     @classmethod
     def validate_format(cls, v: str) -> str:
         """Validate input format."""
-        valid_formats = ["auto", "csv", "text", "json", "jsonl", "xml"]
+        valid_formats = ["auto", "csv", "text", "json", "jsonl", "xml", "winevtxml"]
         if v not in valid_formats:
             raise ValueError(f"Invalid format: {v}. Must be one of {valid_formats}")
         return v
