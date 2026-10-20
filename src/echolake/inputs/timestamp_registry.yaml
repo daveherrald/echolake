@@ -479,15 +479,9 @@ slack:
     is_base: true
     inplace: true
 
-# Linux proxy-host log (in-place). One file carries two line shapes: Squid
-# access lines (leading epoch) and BSD syslog lines (Mon DD HH:MM:SS). Each line
-# is shifted by whichever event-time pattern matches it.
+# Linux syslog (in-place). BSD syslog header (Mon DD HH:MM:SS), shifted in place.
+# Squid proxy access logs are a separate sourcetype (squid:access).
 "linux:syslog":
-  - field: line
-    regex: '^(\d{10}(?:\.\d+)?)'
-    format: unix_seconds
-    is_base: true
-    inplace: true
   - field: line
     regex: '^((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2})'
     format: bsd_syslog
