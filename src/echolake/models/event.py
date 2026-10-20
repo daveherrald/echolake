@@ -17,7 +17,7 @@ class Event:
         timestamps: Extracted timestamps by field name
         metadata: Schema-specific metadata
         format: Input format (json, jsonl, text, xml)
-        schema: Optional schema name (lakehouse_bronze, ocsf, etc.)
+        schema: Optional schema name (e.g. 'raw')
         regex_originals: Original matched strings for regex-extracted timestamps
         regex_formats: Format types for regex-extracted timestamps (unix_seconds, iso8601, etc.)
         field_formats: Format that actually parsed each timestamp field

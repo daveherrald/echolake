@@ -213,7 +213,7 @@ echo:
   prevent_future: true        # Prevent timestamps in future
 
 # Global schema (optional, default: raw)
-schema: "raw"  # raw, ocsf, lakehouse_bronze
+schema: "raw"  # raw (the only schema)
 
 # Additional defaults (optional)
 defaults:
@@ -621,7 +621,7 @@ echolake echo-profile weekly-apt-simulation \
   --destination s3-archive \
   --delta-factor 0.01 \
   --target-time "now-30m" \
-  --input-schema ocsf
+  --input-schema raw
 ```
 
 ### Dry Run

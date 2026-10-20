@@ -46,7 +46,7 @@ def test_bundled_files():
     assert len(manifest.files.bundled) == 2
     assert manifest.files.bundled[0].path == "logs/auth.jsonl"
     assert manifest.files.bundled[0].format == "jsonl"
-    assert manifest.files.bundled[0].schema_type == "lakehouse_bronze"
+    assert manifest.files.bundled[0].schema_type == "raw"
     assert manifest.files.bundled[0].event_count == 100
 
 
@@ -79,7 +79,7 @@ def test_defaults():
     # YAML fixture uses 'replay' key; model_validator migrates it to 'echo'
     assert manifest.defaults.echo is not None
     assert manifest.defaults.echo["delta_factor"] == 1.0
-    assert manifest.defaults.schema_type == "lakehouse_bronze"
+    assert manifest.defaults.schema_type == "raw"
 
 
 def test_validate_files_exist():
@@ -325,7 +325,7 @@ def test_resolved_dataset_merged_defaults():
     defaults = resolved.get_merged_defaults()
     # YAML fixture uses 'replay' key; model_validator migrates it to 'echo'
     assert defaults["echo"]["delta_factor"] == 1.0
-    assert defaults["schema_type"] == "lakehouse_bronze"
+    assert defaults["schema_type"] == "raw"
 
 
 def test_manifest_save_and_load(tmp_path):

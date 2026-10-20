@@ -41,7 +41,7 @@ class InputConfig(BaseModel):
 
     source: InputSourceConfig
     format: str = Field(default="auto", description="Input format: auto, text, json, jsonl, xml")
-    schema_type: Optional[str] = Field(default=None, description="Schema: lakehouse_bronze, ocsf, or None", alias="schema")
+    schema_type: Optional[str] = Field(default=None, description="Schema: 'raw' or None", alias="schema")
     timestamp_patterns: List[TimestampPattern] = Field(default_factory=list)
 
     @field_validator('format')
@@ -147,19 +147,6 @@ class EchoConfig(BaseModel):
         default=False,
         description="Passthrough: emit events with original timestamps and skip the Phase 1 scan (no _time or _raw changes)"
     )
-    emit: str = Field(
-        default="raw",
-        description="Emission shape: 'raw' emits the native log the source produced, 'bronze' keeps the lakehouse bronze envelope around it"
-    )
-
-    @field_validator('emit')
-    @classmethod
-    def validate_emit(cls, v: str) -> str:
-        """Validate emission shape."""
-        allowed = {"raw", "bronze"}
-        if v not in allowed:
-            raise ValueError(f"emit must be one of {sorted(allowed)}, got {v!r}")
-        return v
 
     @field_validator('delta_factor')
     @classmethod

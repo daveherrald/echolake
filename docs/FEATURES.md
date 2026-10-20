@@ -38,7 +38,7 @@ EchoLake is a security log replay and timestamp manipulation tool designed for:
 ✅ **Time Compression/Expansion** - Speed up or slow down events
 ✅ **Multiple Destinations** - Chronicle, S3, GCS, Azure, local
 ✅ **Multiple Input Sources** - Local files, S3, HTTP, datasets
-✅ **Schema Transformation** - Raw, OCSF, and more
+✅ **Raw Log Replay** - Preserve the native log format
 ✅ **Dataset Management** - Package, share, and replay log collections
 ✅ **Credentials Management** - Secure storage separate from configs
 ✅ **Dry Run Mode** - Preview changes without writing output
@@ -258,16 +258,6 @@ Transform logs between different schemas during replay.
 **raw** - No transformation, preserve original format
 ```bash
 echolake echo --input logs.jsonl --output out/ --input-schema raw
-```
-
-**lakehouse_bronze** - Transform to bronze layer schema
-```bash
-echolake echo --input logs.jsonl --output out/ --input-schema ocsf
-```
-
-**ocsf** - Transform to Open Cybersecurity Schema Framework
-```bash
-echolake echo --input logs.jsonl --output out/ --input-schema ocsf
 ```
 
 #### Per-File Schema
@@ -1507,7 +1497,6 @@ output:
 - **[TIME_EXPRESSIONS.md](TIME_EXPRESSIONS.md)** - Time expression syntax
 - **[DRY_RUN_MODE.md](DRY_RUN_MODE.md)** - Dry run mode details
 - **[TIMESTAMP_MANIPULATION.md](TIMESTAMP_MANIPULATION.md)** - Timestamp manipulation guide
-- **[EMISSION_SHAPE.md](EMISSION_SHAPE.md)** - Native raw vs lakehouse bronze output (`--emit`)
 - **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
 - **[README.md](../README.md)** - Project overview
 
@@ -1522,7 +1511,7 @@ output:
 - ✅ Dataset management and dependencies
 - ✅ File reference caching
 - ✅ Dry run mode
-- ✅ Schema transformation (raw, bronze, ocsf)
+- ✅ Raw log replay
 - ✅ Configuration files
 - ✅ Dataset preview command
 - ✅ Timeline ceiling (prevent future)

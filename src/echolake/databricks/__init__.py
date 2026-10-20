@@ -21,7 +21,7 @@ class Replay:
         from echolake import Replay
 
         replay = Replay()
-        replay.input_source("dbfs:/mnt/logs", format="jsonl", schema="lakehouse_bronze")
+        replay.input_source("dbfs:/mnt/logs", format="jsonl", schema="raw")
         replay.output_destination("dbfs:/mnt/replayed", format="jsonl")
         replay.set_timestamp_options(delta_factor=2.0, prevent_future=True)
         stats = replay.run()
@@ -48,7 +48,7 @@ class Replay:
         Args:
             path: Input path (local, DBFS, S3, GCS, etc.)
             format: Input format (json, jsonl, text, xml)
-            schema: Schema type (lakehouse_bronze, ocsf, raw)
+            schema: Schema type (raw)
             source_type: Source type (auto, local, s3, gcs, azure)
             pattern: File pattern for matching
 

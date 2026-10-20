@@ -105,7 +105,7 @@ class RawSchema(InputSchema):
         # Common timestamp field names
         return [
             {'field': 'timestamp', 'format': 'iso8601', 'is_base': True},
-            {'field': 'time', 'format': 'unix_millis', 'is_base': False},  # OCSF/common unix ms
+            {'field': 'time', 'format': 'unix_millis', 'is_base': False},  # common unix-ms time field
             {'field': 'time', 'format': 'iso8601', 'is_base': False},  # Also try ISO8601 for 'time'
             {'field': 'ts', 'format': 'unix_seconds', 'is_base': False},
             {'field': 'ts', 'format': 'unix_millis', 'is_base': False},
@@ -118,8 +118,8 @@ class RawSchema(InputSchema):
             {'field': 'createdAt', 'format': 'iso8601', 'is_base': False},
             {'field': '_time', 'format': 'iso8601', 'is_base': False},
             {'field': '_time', 'format': 'unix_seconds', 'is_base': False},
-            {'field': 'start_time', 'format': 'unix_millis', 'is_base': False},  # OCSF
-            {'field': 'end_time', 'format': 'unix_millis', 'is_base': False},  # OCSF
+            {'field': 'start_time', 'format': 'unix_millis', 'is_base': False},  # common unix-ms time field
+            {'field': 'end_time', 'format': 'unix_millis', 'is_base': False},  # common unix-ms time field
         ]
 
     def validate_event(self, raw_data: dict) -> bool:

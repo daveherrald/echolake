@@ -61,13 +61,13 @@ class TestDatasetReference:
             ref="local:datasets/test",
             version=">=1.0.0",
             description="Test dataset",
-            schema="lakehouse_bronze",
+            schema="raw",
             echo=echo_cfg
         )
         assert ref.ref == "local:datasets/test"
         assert ref.version == ">=1.0.0"
         assert ref.description == "Test dataset"
-        assert ref.schema_type == "lakehouse_bronze"
+        assert ref.schema_type == "raw"
         assert ref.echo.delta_factor == 2.0
         assert ref.echo.target_time == "now-2h"
 

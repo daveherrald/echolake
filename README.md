@@ -9,7 +9,7 @@ EchoLake is a Python-based tool for replaying security logs and events into SIEM
 - **Dry-Run Mode with Visualization**: Preview timeline and event distribution before writing output
 - **Multiple Input Sources**: Local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage
 - **Multiple Formats**: JSON, JSONL, plain text (XML support planned)
-- **Schema Support**: Multiple output schemas including OCSF
+- **Native Log Replay**: Preserves each log in the shape its source produced
 - **Cloud Output**: Write to S3, GCS, or Azure Blob Storage
 - **Dual Interface**: CLI tool and Python library (Config + EchoEngine)
 
@@ -50,13 +50,6 @@ echolake echo \
   --base-time latest \
   --target-time now-2h \
   --delta-factor 1.5
-
-# Emit the lakehouse bronze envelope instead of the native raw log
-echolake echo \
-  --input ./logs \
-  --output ./replayed \
-  --input-schema lakehouse_bronze \
-  --emit bronze
 
 # Dry-run to preview (no output written)
 echolake echo \
@@ -100,7 +93,6 @@ echo:
   target_time: now-2h  # now, now-1d, or ISO8601 timestamp
   prevent_future: true
   ceiling_time: now  # Maximum allowed timestamp
-  emit: raw  # raw = native log as the source produced it, bronze = keep the lakehouse envelope
 
 input:
   source:
@@ -154,11 +146,9 @@ See [docs/TIME_EXPRESSIONS.md](docs/TIME_EXPRESSIONS.md) for complete documentat
 
 ## Supported Schemas
 
-EchoLake supports multiple output schemas:
+EchoLake uses the raw input schema, which preserves the original log format:
 
 - **raw** - No transformation, preserve original format (default)
-- **ocsf** - Open Cybersecurity Schema Framework with tagging
-- **lakehouse_bronze** - Bronze layer schema with dual timestamp support
 
 ## Development
 
@@ -188,7 +178,7 @@ mypy src/
 - ✅ Core replay engine
 - ✅ Cloud bucket outputs (S3, GCS, Azure)
 - ✅ JSONL format support
-- ✅ Schema support (raw, OCSF, bronze)
+- ✅ Raw schema support
 - ✅ CLI interface
 - ✅ Python library interface (Config + EchoEngine)
 - ✅ Relative time expressions

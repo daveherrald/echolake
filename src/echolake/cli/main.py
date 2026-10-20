@@ -54,7 +54,7 @@ def echo(
     input_schema: Optional[str] = typer.Option(
         None,
         "--input-schema",
-        help="Input schema (lakehouse_bronze, ocsf, raw)",
+        help="Input schema (raw)",
     ),
     output_dest: Optional[str] = typer.Option(
         None,
@@ -99,11 +99,6 @@ def echo(
         False,
         "--no-shift",
         help="Passthrough: emit events with their original timestamps and skip the Phase 1 scan (no _time or _raw changes)",
-    ),
-    emit: str = typer.Option(
-        "raw",
-        "--emit",
-        help="Emission shape: 'raw' (default) emits the native log the source produced; 'bronze' keeps the lakehouse bronze envelope around it",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -265,9 +260,6 @@ def echo(
 
         if no_shift:
             cfg.echo.no_shift = True
-
-        if emit:
-            cfg.echo.emit = emit
 
         if path_template and cfg.output:
             # If the output URL included a prefix (e.g. s3://bucket/prefix),

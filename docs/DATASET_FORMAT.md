@@ -490,10 +490,8 @@ files:
 - Use `"xml"` for XML format logs
 
 **schema** (optional)
-- Valid values: `"raw"`, `"ocsf"`, `"lakehouse_bronze"`
+- Valid values: `"raw"` (the default and only schema)
 - `"raw"` - No transformation, original format
-- `"ocsf"` - Open Cybersecurity Schema Framework
-- `"lakehouse_bronze"` - Bronze layer schema
 
 **event_count** (optional)
 - Expected number of events/records in the file
@@ -606,7 +604,7 @@ files:
 - Same as bundled files: `"jsonl"`, `"json"`, `"text"`, `"xml"`
 
 **schema** (optional)
-- Same as bundled files: `"raw"`, `"ocsf"`, `"lakehouse_bronze"`
+- Same as bundled files: `"raw"`
 
 **checksum** (optional but recommended)
 - Format: `"algorithm:hexvalue"`
@@ -826,7 +824,7 @@ defaults:
 
 **schema** (optional)
 - Default schema for files that don't specify one
-- Valid values: `"raw"`, `"ocsf"`, `"lakehouse_bronze"`
+- Valid values: `"raw"`
 
 ---
 
@@ -1531,23 +1529,6 @@ Use when:
 - Logs are already in correct format
 - Don't need schema validation
 - Maximum flexibility
-
-### lakehouse_bronze
-
-**Bronze Layer Schema** - Standardized bronze layer format
-
-Use when:
-- Need consistent schema with dual timestamps
-- Following medallion architecture
-
-### ocsf
-
-**Open Cybersecurity Schema Framework** - Industry standard schema
-
-Use when:
-- Need vendor-neutral format
-- Sharing with other tools
-- Following OCSF standards
 
 ---
 

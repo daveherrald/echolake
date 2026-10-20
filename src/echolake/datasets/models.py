@@ -155,7 +155,7 @@ class BundledFile(BaseModel):
     format: str = Field(default="auto", description="File format (auto, jsonl, json, text, xml)")
     schema_type: Optional[str] = Field(
         default=None,
-        description="Schema type (lakehouse_bronze, ocsf, raw)",
+        description="Schema type (raw)",
         alias="schema"
     )
     event_count: Optional[int] = Field(default=None, description="Expected event count")
@@ -200,7 +200,7 @@ class FileReference(BaseModel):
     format: str = Field(default="auto", description="File format (auto, jsonl, json, text, xml)")
     schema_type: Optional[str] = Field(
         default=None,
-        description="Schema type (lakehouse_bronze, ocsf, raw)",
+        description="Schema type (raw)",
         alias="schema"
     )
     checksum: Optional[str] = Field(

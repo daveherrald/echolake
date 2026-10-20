@@ -25,7 +25,7 @@ files:
     - path: "logs/auth.jsonl"
       description: "Authentication logs"
       format: "jsonl"
-      schema: "lakehouse_bronze"
+      schema: "raw"
       event_count: 100
 
     - path: "logs/network.jsonl"
@@ -37,7 +37,7 @@ files:
     - uri: "s3://test-bucket/common/dns.jsonl"
       description: "DNS query logs"
       format: "jsonl"
-      schema: "lakehouse_bronze"
+      schema: "raw"
       checksum: "sha256:abc123def456"
 
 dependencies:
@@ -50,4 +50,4 @@ defaults:
     delta_factor: 1.0
     base_time: "earliest"
     target_time: "now-1h"
-  schema: "lakehouse_bronze"
+  schema: "raw"

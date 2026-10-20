@@ -162,22 +162,6 @@ input:
       format: iso8601
 ```
 
-## OCSF Support
-
-For OCSF format, the `time` field (Unix milliseconds) is transformed:
-
-```yaml
-input:
-  schema: ocsf
-```
-
-The schema handler automatically detects OCSF timestamp fields including:
-- `time` (primary)
-- `start_time`
-- `end_time`
-- `create_time`
-- `modify_time`
-
 ## Advanced: Custom Timestamp Patterns
 
 For raw data or custom schemas:

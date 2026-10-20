@@ -21,16 +21,6 @@ from ..outputs.formats import get_output_format
 logger = logging.getLogger(__name__)
 
 
-
-class EnvelopeShapeError(Exception):
-    """Raised when emit=raw cannot find the native log inside a bronze envelope.
-
-    Deliberately not caught by the per-event error handler: emitting only the
-    records that happened to unwrap would produce a silently incomplete
-    dataset, which is worse than failing the run.
-    """
-
-
 class EchoEngine:
     """
     Core echo engine that processes events from input to output.
@@ -300,9 +290,8 @@ class EchoEngine:
                     "  The input was read but 0 events yielded a base timestamp, so a "
                     "timestamp-shifting run would write 0 events.\n"
                     "  Most common cause: the input schema's timestamp field does not match "
-                    "the data. The 'lakehouse_bronze' schema expects '_time' (or '_event_time'); "
-                    "if your events use a different field, set --input-schema raw (or omit schema) "
-                    "and/or define timestamp_patterns.\n"
+                    "the data. Set --input-schema raw (or omit schema) and/or define "
+                    "timestamp_patterns so the shifter can find the event time.\n"
                     "  To emit events unchanged without any shift, use --no-shift."
                 )
                 raise ValueError(
@@ -397,54 +386,6 @@ class EchoEngine:
             self.stats.end_time = datetime.now(timezone.utc)
 
         return self.stats
-
-
-    # Envelope keys the lakehouse bronze wrapper adds around the native log.
-    _BRONZE_ENVELOPE_KEYS = {'_event_time', '_ingest_time', 'lw_id', 'data', '_meta', '_time'}
-
-    def _unwrap_envelope(self, event):
-        """Strip the lakehouse bronze envelope, returning the native log payload.
-
-        Only applies to lakehouse_bronze input; every other schema already
-        carries the native log and is passed through untouched.
-        """
-        if self.config.echo.emit != 'raw':
-            return event.raw_data
-        if event.schema != 'lakehouse_bronze':
-            return event.raw_data
-        if not isinstance(event.raw_data, dict):
-            return event.raw_data
-
-        payload = event.raw_data.get('data')
-        if not isinstance(payload, dict):
-            present = sorted(event.raw_data.keys())[:12]
-            raise EnvelopeShapeError(
-                "emit=raw needs the native log in the bronze envelope's 'data' key, "
-                f"but this event has no usable 'data' object (top-level keys: {present}). "
-                "Refusing to emit a mix of unwrapped and enveloped events. "
-                "Use --emit bronze to keep the envelope, or check the input schema."
-            )
-
-        # Stripping the envelope also strips the timestamps that were shifted on
-        # it, so the payload must carry a shifted timestamp of its own. Without
-        # one, the emitted event would silently read at its original capture
-        # time, which is the exact failure this mode exists to avoid.
-        if not self.config.echo.no_shift and not self._payload_carries_time(event, payload):
-            raise EnvelopeShapeError(
-                "emit=raw would emit an event whose payload has no shifted timestamp, "
-                f"so it would keep its original capture time (payload keys: {sorted(payload.keys())[:12]}). "
-                "Add the payload's timestamp field to the lakehouse_bronze schema patterns, "
-                "or use --emit bronze to keep the envelope's timestamps."
-            )
-        return payload
-
-    @staticmethod
-    def _payload_carries_time(event, payload) -> bool:
-        """True when something inside the payload was actually time-shifted."""
-        if any(f.startswith('data.') for f in event.timestamps):
-            return True
-        # `_raw` text is shifted in place rather than via a timestamp field.
-        return isinstance(payload.get('_raw'), str) and bool(payload['_raw'])
 
     def _stream_process_file(self, file_id: str, original_base: datetime, new_base: datetime, progress=None, task_id=None, file_size_bytes=0, no_shift: bool = False):
         """
@@ -572,10 +513,7 @@ class EchoEngine:
                         local_events_modified += 1
                         # CRITICAL FIX: Update raw_data with new timestamps
                         event.raw_data = event._update_raw_data(event.timestamps)
-                        # Shift timestamps embedded in _raw text (CSV exports).
-                        # A bronze row carries its _raw inside the payload, which
-                        # becomes the whole event once the envelope is stripped,
-                        # so both positions need the same treatment.
+                        # Shift timestamps embedded in _raw text (e.g. Squid, CSV exports).
                         if isinstance(event.raw_data, dict):
                             for holder in (
                                 event.raw_data,
@@ -592,7 +530,6 @@ class EchoEngine:
 
                 # Add to buffer if not dry-run
                 if not self.dry_run:
-                    event.raw_data = self._unwrap_envelope(event)
                     output_data = self.output_format.format_event(event)
                     event_buffer.append(output_data)
 
@@ -609,10 +546,6 @@ class EchoEngine:
                                 progress.advance(task_id, advance=bytes_to_advance)
                                 bytes_written_in_file += bytes_to_advance
 
-            except EnvelopeShapeError:
-                # Never downgrade to a per-event warning: a partial write here
-                # would look like a successful run over an incomplete dataset.
-                raise
             except Exception as e:
                 logger.warning(f"Failed to process event: {e}")
                 local_errors += 1
@@ -823,9 +756,6 @@ class EchoEngine:
         # Serialize events
         serialized_events = []
         for event in events:
-            # Unwrap outside the try: a malformed envelope must fail the run
-            # loudly, not degrade into a per-event serialization warning.
-            event.raw_data = self._unwrap_envelope(event)
             try:
                 serialized = self.output_format.format_event(event)
                 serialized_events.append(serialized)
