@@ -285,7 +285,7 @@ zscalernss-web:
 
 # auth.log lines shipped by Vector: the syslog line is in `message` (RFC3339
 # with microseconds); Vector's own `timestamp` is ISO8601 or epoch seconds.
-"linux_secure:vector":
+"linux_secure:fluentbit":
   - field: message
     regex: '^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})'
     format: iso8601

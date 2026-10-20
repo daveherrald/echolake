@@ -59,9 +59,9 @@ def test_crowdstrike_fdr_audit_iso_timestamp_and_millis():
 
 
 @pytest.mark.parametrize("vector_ts", [1790000000, "2026-09-21T12:00:00.123456789Z"])
-def test_linux_secure_vector_shifts_line_in_place(vector_ts):
+def test_linux_secure_fluentbit_shifts_line_in_place(vector_ts):
     line = "2026-09-21T12:00:00.123456+00:00 host-a sshd-session[1]: Connection closed"
-    out = _shift({"message": line, "timestamp": vector_ts, "host": "host-a"}, "linux_secure:vector")
+    out = _shift({"message": line, "timestamp": vector_ts, "host": "host-a"}, "linux_secure:fluentbit")
     assert out["message"] == (
         "2026-10-21T13:02:03.579456+00:00 host-a sshd-session[1]: Connection closed"
     )
