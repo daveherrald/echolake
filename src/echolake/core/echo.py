@@ -470,7 +470,14 @@ class EchoEngine:
                     ndec = len(tok.split('.', 1)[1])
                     return f'{val:.{ndec}f}'
                 return str(int(round(val)))
-            return _format_iso8601(new.astimezone(orig.tzinfo), tok)
+            new_local = new.astimezone(orig.tzinfo)
+            if fmt in ('iso8601', 'rfc3339', 'auto'):
+                return _format_iso8601(new_local, tok)
+            # Any other `fmt` is a strftime pattern the base was parsed with
+            # (CLF, Apache error, PHP-FPM, ...). Re-emit in that same textual
+            # format so a native log line stays byte-faithful apart from the
+            # shifted timestamp, instead of being rewritten as ISO 8601.
+            return new_local.strftime(fmt)
 
         def make_repl(fmt):
             def repl(m):
