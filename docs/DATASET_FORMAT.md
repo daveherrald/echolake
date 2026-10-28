@@ -1603,11 +1603,19 @@ Mark an indicator of compromise with `indicator_types` (STIX indicator-type
 vocabulary: `malicious-activity`, `anomalous-activity`, `compromised`, `benign`,
 `attribution`, `unknown`), `kill_chain_phases` (ATT&CK tactic slugs),
 `techniques` (ATT&CK ids), `confidence` (0 to 100), and `first_seen` /
-`last_seen`. The builder then also emits a STIX `indicator` with a pattern over
-the observable. Leave `indicator_types` empty for a plain asset identifier such
-as a victim host's IP. An artifact with no STIX observable type, such as a named
-pipe, is given `type: indicator` with an explicit `pattern` and `pattern_type`
-(`sigma` is the natural choice for a detection engineer).
+`last_seen`. The builder then also emits a STIX `indicator` with a STIX pattern
+over the observable. Leave `indicator_types` empty for a plain asset identifier
+such as a victim host's IP.
+
+An artifact with no STIX observable type, such as a named pipe, is given
+`type: indicator`. Point it at an external detection rule with `rule` (a path or
+URL to the rule file, such as `rules/sigma/<rule>.yml`): the builder attaches
+that as an `external_references` entry on the matching attack-action and emits no
+indicator object. Detection rules are never inlined into the bundle. A
+`type: indicator` observable may still carry an explicit `pattern` and
+`pattern_type` for a STIX pattern, but a `sigma` pattern is kept only as a
+manifest note and is dropped from the Attack Flow output; ship the rule under
+`rules/sigma/` and reference it with `rule`.
 
 **kill_chain** (optional, requires entities). The ordered stages. Each stage has
 an `id` (`S0`, `S1`, ...), `name`, `description`, an ATT&CK `tactic` slug, one
@@ -1665,5 +1673,6 @@ becomes an `attack-asset` whose `object_ref` points at its STIX object; each
 stage becomes one `attack-action` per technique, chained with `effect_refs`,
 with `asset_refs` to its entities and `related-to` relationships from its
 observables; indicators are `based-on` their observable and `indicate` the
-entities that contain it. Identifiers are deterministic (UUIDv5), so a rebuild
-produces the same file.
+entities that contain it; and a `rule` reference becomes a `sigma-rule`
+`external_references` entry on the stage's matching attack-action. Identifiers
+are deterministic (UUIDv5), so a rebuild produces the same file.

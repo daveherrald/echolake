@@ -460,6 +460,7 @@ class ScenarioObservable(BaseModel):
     last_seen: Optional[str] = Field(default=None, description="ISO8601 UTC last appearance in the data")
     pattern: Optional[str] = Field(default=None, description="Pattern for type indicator")
     pattern_type: Optional[str] = Field(default=None, description="stix, sigma, yara, snort, suricata, pcre")
+    rule: Optional[str] = Field(default=None, description="Path or URL to an external detection rule file; use instead of an inline pattern. Sigma rules are referenced this way, never inlined into the attack-flow bundle.")
 
     @field_validator("id")
     @classmethod
@@ -503,8 +504,11 @@ class ScenarioObservable(BaseModel):
             raise ValueError(f"observable {self.id!r}: file needs a name or hashes")
         if self.type == "windows-registry-key" and not extra.get("key"):
             raise ValueError(f"observable {self.id!r}: windows-registry-key needs key")
-        if self.type == "indicator" and not (self.pattern and self.pattern_type):
-            raise ValueError(f"observable {self.id!r}: indicator needs pattern and pattern_type")
+        if self.type == "indicator":
+            if bool(self.pattern) != bool(self.pattern_type):
+                raise ValueError(f"observable {self.id!r}: pattern and pattern_type must be set together")
+            if not self.pattern and not self.rule:
+                raise ValueError(f"observable {self.id!r}: indicator needs pattern and pattern_type, or a rule reference")
         if self.type == "user-account" and not (extra.get("account_login") or extra.get("user_id")):
             raise ValueError(f"observable {self.id!r}: user-account needs account_login or user_id")
         return self

@@ -72,6 +72,7 @@ SAMPLE = {
          "indicator_types": ["malicious-activity"], "kill_chain_phases": ["persistence"], "techniques": ["T1547.001"]},
         {"id": "pipe", "type": "indicator", "name": "Suspicious named pipe", "pattern_type": "sigma",
          "pattern": "logsource: {category: pipe_created, product: windows}\ndetection: {selection: {PipeName: '\\\\sample-pipe'}, condition: selection}",
+         "rule": "rules/sigma/suspicious_named_pipe.yml",
          "indicator_types": ["malicious-activity"], "kill_chain_phases": ["lateral-movement"], "techniques": ["T1021.001"]},
     ],
     "kill_chain": [
@@ -107,14 +108,14 @@ def test_bundle_structure():
     # SCOs: 2 host observables + c2-ip + c2-url + file + regkey, plus 2 user-account entities
     assert t["ipv4-addr"] == 2 and t["domain-name"] == 1 and t["url"] == 1
     assert t["file"] == 1 and t["windows-registry-key"] == 1 and t["user-account"] == 2
-    # indicators: 4 marked observables + the sigma one
-    assert t["indicator"] == 5
+    # indicators: the 4 marked SCO-backed observables; the sigma observable is a rule reference, not an indicator
+    assert t["indicator"] == 4
     assert t["extension-definition"] == 1 and t["identity"] == 3  # CTID, EchoLake, ACME
     rels = Counter(r["relationship_type"] for r in _by_type(bundle, "relationship"))
     assert rels["consists-of"] == 4  # ws-01 (2) + c2 (2)
     assert rels["based-on"] == 4  # one per SCO-backed indicator
     assert rels["indicates"] == 2  # c2-ip and c2-url indicate the C2 infrastructure
-    assert rels["related-to"] == 5  # dropper, runkey, c2-ip, c2-url, pipe -> stage actions
+    assert rels["related-to"] == 4  # dropper, runkey, c2-ip, c2-url -> stage actions (pipe is a rule reference)
 
 
 def test_assets_point_at_stix_objects():
@@ -155,8 +156,22 @@ def test_indicator_patterns_and_phases():
     assert ind["203.0.113.9"]["kill_chain_phases"] == [{"kill_chain_name": "mitre-attack", "phase_name": "command-and-control"}]
     assert ind["203.0.113.9"]["valid_from"].startswith("2026-01-01T10:20:00")
     assert ind["update-helper.exe"]["pattern"] == f"[file:hashes.'SHA-256' = '{SHA256}']"
-    assert ind["Suspicious named pipe"]["pattern_type"] == "sigma"
+    assert "Suspicious named pipe" not in ind  # sigma is referenced, not emitted as an indicator
+    assert all(i.get("pattern_type") != "sigma" for i in _by_type(bundle, "indicator"))
     assert ind["203.0.113.9"]["labels"] == ["T1071.001"]
+
+
+def test_sigma_observable_becomes_external_reference():
+    bundle = build_attack_flow(DatasetManifest.model_validate(SAMPLE))
+    # No inline Sigma anywhere in the bundle.
+    assert all(i.get("pattern_type") != "sigma" for i in _by_type(bundle, "indicator"))
+    # The S3 lateral-movement action (T1021.001) carries a sigma-rule external reference.
+    actions = {a["name"]: a for a in _by_type(bundle, "attack-action")}
+    s3 = actions["S3 Lateral movement"]
+    refs = [r for r in s3.get("external_references", []) if r["source_name"] == "sigma-rule"]
+    assert len(refs) == 1
+    assert refs[0]["external_id"] == "suspicious_named_pipe"
+    assert refs[0]["description"] == "rules/sigma/suspicious_named_pipe.yml"
 
 
 def test_deterministic_and_canonical_sco_ids():

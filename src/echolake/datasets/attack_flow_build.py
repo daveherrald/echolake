@@ -59,7 +59,7 @@ EXT_BLOCK = {EXT_ID: {"extension_type": "new-sdo"}}
 _ANNOTATIONS = {
     "id", "type", "indicator_types", "kill_chain_phases", "techniques",
     "confidence", "first_seen", "last_seen", "description", "pattern",
-    "pattern_type", "role", "observables",
+    "pattern_type", "rule", "role", "observables",
 }
 
 
@@ -233,6 +233,21 @@ def _pattern_for(obs: ScenarioObservable, props: Dict[str, Any]) -> str:
     raise AttackFlowBuildError(f"observable {obs.id!r}: no pattern rule for type {t!r}; give it type indicator with an explicit pattern")
 
 
+def _rule_ref(rule: str) -> Dict[str, Any]:
+    """An external_references entry pointing at an external detection rule file."""
+    base = rule.rstrip("/").rsplit("/", 1)[-1]
+    for ext in (".yml", ".yaml"):
+        if base.endswith(ext):
+            base = base[: -len(ext)]
+            break
+    ref: Dict[str, Any] = {"source_name": "sigma-rule", "external_id": base}
+    if rule.startswith(("http://", "https://")):
+        ref["url"] = rule
+    else:
+        ref["description"] = rule
+    return ref
+
+
 def _build_indicator(stix2: Any, ns: uuid.UUID, obs: ScenarioObservable, pattern: str,
                      pattern_type: str, ts: str, valid_from: str) -> Any:
     kwargs: Dict[str, Any] = dict(
@@ -336,10 +351,17 @@ def build_attack_flow(manifest: DatasetManifest) -> Dict[str, Any]:
     # Observables: SCO (or pattern-only indicator) plus an indicator when marked.
     sco_id: Dict[str, str] = {}
     ind_id: Dict[str, str] = {}
+    rule_refs: Dict[str, str] = {}
+    obs_by_id = {o.id: o for o in manifest.observables}
     pending_rels: List[Tuple[str, str, str]] = []
     for obs in manifest.observables:
         props = _props(obs)
         if obs.type == "indicator":
+            if obs.rule:
+                rule_refs[obs.id] = obs.rule  # external reference on the action; no indicator object
+                continue
+            if obs.pattern_type == "sigma":
+                continue  # inline Sigma is never emitted into the bundle
             ind = _build_indicator(stix2, ns, obs, obs.pattern or "", obs.pattern_type or "stix", ts,
                                    obs.first_seen or valid_from_default)
             ind_id[obs.id] = add(ind)
@@ -372,9 +394,9 @@ def build_attack_flow(manifest: DatasetManifest) -> Dict[str, Any]:
             asset["description"] = desc
         asset_id[ent.id] = add(asset)
         for h in ent.observables:
-            if h not in sco_id and h not in ind_id:
-                raise AttackFlowBuildError(f"entity {ent.id!r} references observable {h!r} with no STIX object")
-            target = sco_id.get(h) or ind_id[h]
+            target = sco_id.get(h) or ind_id.get(h)
+            if not target:
+                continue  # detection reference or dropped sigma: entities do not link to it
             rel = "consists-of" if ent.type == "infrastructure" else "related-to"
             pending_rels.append((rel, ent_id[ent.id], target))
             if h in ind_id and ent.type in ("infrastructure", "malware", "tool", "threat-actor", "intrusion-set", "campaign") and h in sco_id:
@@ -393,6 +415,7 @@ def build_attack_flow(manifest: DatasetManifest) -> Dict[str, Any]:
         stage_actions[stage.id] = [_sid(ns, "attack-action", f"{stage.id}:{tid}") for tid in stage.techniques]
     order = [s.id for s in manifest.kill_chain]
     action_objs: List[Dict[str, Any]] = []
+    action_by_id: Dict[str, Dict[str, Any]] = {}
     for idx, stage in enumerate(manifest.kill_chain):
         nxt = stage.next if stage.next is not None else (order[idx + 1:idx + 2])
         ids = stage_actions[stage.id]
@@ -426,10 +449,16 @@ def build_attack_flow(manifest: DatasetManifest) -> Dict[str, Any]:
             if effects:
                 action["effect_refs"] = effects
             action_objs.append(action)
+            action_by_id[ids[j]] = action
         for h in stage.observables:
+            if h in rule_refs:
+                tid = next((t for t in obs_by_id[h].techniques if t in stage.techniques), None)
+                target = _sid(ns, "attack-action", f"{stage.id}:{tid}") if tid else ids[0]
+                action_by_id[target].setdefault("external_references", []).append(_rule_ref(rule_refs[h]))
+                continue
             src = ind_id.get(h) or sco_id.get(h)
             if not src:
-                raise AttackFlowBuildError(f"stage {stage.id!r} references observable {h!r} with no STIX object")
+                continue  # dropped sigma observable with no rule reference
             pending_rels.append(("related-to", src, ids[0]))
 
     first = stage_actions[manifest.kill_chain[0].id][0]
