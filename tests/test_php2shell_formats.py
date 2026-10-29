@@ -62,7 +62,7 @@ def _build(tmp_path):
     return ds
 
 
-def _run(tmp_path):
+def _run(tmp_path, shift_payload=False):
     ds = _build(tmp_path)
     out = tmp_path / "out"; out.mkdir()
     cfg_yaml = tmp_path / "c.yaml"
@@ -78,10 +78,11 @@ output:
 echo:
   target_time: '2026-11-01T00:00:00Z'
   prevent_future: false
+  shift_payload: {str(shift_payload).lower()}
 """
     )
     cfg = Config.from_file(str(cfg_yaml))
-    EchoEngine(cfg).run()
+    stats = EchoEngine(cfg).run()
     files = {}
     for f in glob.glob(os.path.join(str(out), "**", "*"), recursive=True):
         if os.path.isfile(f):
@@ -89,11 +90,12 @@ echo:
             if raw[:2] == b"\x1f\x8b":
                 raw = gzip.decompress(raw)
             files[os.path.basename(f)] = raw.decode()
-    return files
+    return files, stats
 
 
 def test_native_formats_preserved_on_inplace_shift(tmp_path):
-    f = _run(tmp_path)
+    f, stats = _run(tmp_path)
+    assert stats.event_count == 7
     nginx = f["nginx.log.gz"]
     # base (20:00:00) maps to the target; CLF format kept, not rewritten to ISO 8601
     assert "[01/Nov/2026:00:00:00 +0000]" in nginx
@@ -113,3 +115,9 @@ def test_native_formats_preserved_on_inplace_shift(tmp_path):
     mitm = f["mitm.log.gz"]
     assert "REQ 1 2026-11-01T00:00:06Z POST" in mitm
     assert "headers=aa | body=bb" in mitm  # payload untouched
+
+
+def test_inplace_stats_include_untimestamped_lines_with_payload_shift(tmp_path):
+    _, stats = _run(tmp_path, shift_payload=True)
+    assert stats.event_count == 7
+    assert stats.events_modified == 6

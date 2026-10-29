@@ -436,8 +436,9 @@ class EchoEngine:
 
         st = self.file_sourcetype_map.get(Path(file_id).name)
         entry = TimestampRegistry.get().lookup(st) or []
-        compiled = [(re.compile(p['regex']), p.get('format', 'iso8601'))
-                    for p in entry if p.get('regex')]
+        base_compiled = [(re.compile(p['regex']), p.get('format', 'iso8601'))
+                         for p in entry if p.get('regex') and p.get('is_base')]
+        is_xml = self._format_for(file_id) == 'xml'
         df = self.config.echo.delta_factor
         ceiling = None
         if not no_shift and self.timestamp_manipulator.prevent_future:
@@ -486,10 +487,19 @@ class EchoEngine:
                 return g0[:s1] + shift_token(m.group(1), fmt) + g0[e1:]
             return repl
 
-        matched = 0
         out = []
+        event_count = 0
+        events_modified = 0
         text = b''.join(self.input_source.read_file(file_id)).decode('utf-8', errors='replace')
         for line in text.splitlines(keepends=True):
+            base_matches = sum(
+                1 for rx, _ in base_compiled for _ in rx.finditer(line)
+            )
+            if is_xml:
+                event_count += base_matches
+            elif line.strip():
+                event_count += 1
+
             if not no_shift:
                 if shift_payload:
                     # Opt-in: shift the event time AND every other recognized
@@ -501,9 +511,12 @@ class EchoEngine:
                         line, original_base, new_base, df, ceiling, sourcetype=st)
                 else:
                     # Default: shift only the registry-defined event timestamp.
-                    for rx, fmt in compiled:
-                        line, n = rx.subn(make_repl(fmt), line, count=1)
-                        matched += n
+                    for rx, fmt in base_compiled:
+                        line, _ = rx.subn(make_repl(fmt), line, count=1)
+                if is_xml:
+                    events_modified += base_matches
+                elif line.strip() and base_matches:
+                    events_modified += 1
             out.append(line)
         shifted = ''.join(out)
 
@@ -513,10 +526,9 @@ class EchoEngine:
             # text already ends in one, so drop it to keep the output byte-exact.
             payload = shifted[:-1] if shifted.endswith('\n') else shifted
             self.output_destination.write(file_id, [payload], metadata=metadata)
-        n_events = matched or shifted.count('\n')
         with self._stats_lock:
-            self.stats.event_count += n_events
-            self.stats.events_modified += (0 if no_shift else matched)
+            self.stats.event_count += event_count
+            self.stats.events_modified += events_modified
         if progress is not None and task_id is not None and file_size_bytes:
             progress.advance(task_id, advance=file_size_bytes)
 
