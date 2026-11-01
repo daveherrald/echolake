@@ -58,4 +58,11 @@ class TimestampRegistry:
         if original_key:
             return self._registry[original_key]
 
+        # Windows Event XML commonly adds the channel after the canonical
+        # sourcetype. All channels use the same SystemTime extraction rule.
+        if sourcetype.lower().startswith("xmlwineventlog:"):
+            original_key = self._lower_map.get("xmlwineventlog")
+            if original_key:
+                return self._registry[original_key]
+
         return None

@@ -70,6 +70,9 @@ Documentation = "https://github.com/daveherrald/echolake#readme"
 Repository = "https://github.com/daveherrald/echolake"
 Issues = "https://github.com/daveherrald/echolake/issues"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/echolake"]
 

@@ -40,10 +40,27 @@ SELF_CLOSING = """<?xml version="1.0" encoding="utf-8"?>
 <Events><Event /></Events>
 """
 UTF16_EVENT = EVENT.replace('encoding="utf-8"', 'encoding="utf-16"')
+INVALID_TIMESTAMP = EVENT.replace(
+    "2026-03-13T17:40:06.006000Z",
+    "not-a-time",
+)
 MISLEADING_COMMENT = EVENT.replace(
     "<Events>",
     '<Events>\n  <!-- <TimeCreated SystemTime="2026-03-13T17:40:05.006000Z" /> -->',
 )
+DISTRIBUTED_TIMESTAMPS = """<?xml version="1.0" encoding="utf-8"?>
+<Events>
+  <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+    <System>
+      <TimeCreated SystemTime="2026-03-13T17:40:06.006000Z" />
+      <TimeCreated SystemTime="2026-03-13T17:40:07.006000Z" />
+    </System>
+  </Event>
+  <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+    <System><EventID>2</EventID></System>
+  </Event>
+</Events>
+"""
 
 
 def write_gzip(path, text, encoding="utf-8"):
@@ -171,6 +188,19 @@ def test_xml_sourcetype_lookup_is_case_insensitive(tmp_path):
     assert stats.errors == 0
 
 
+def test_xml_sourcetype_channel_suffix_uses_xml_accounting(tmp_path):
+    stats = run_dataset(
+        tmp_path,
+        populated=True,
+        no_shift=True,
+        sourcetype="XmlWinEventLog:Security",
+    )
+
+    assert stats.event_count == 1
+    assert stats.events_modified == 0
+    assert stats.errors == 0
+
+
 def test_xml_payload_shift_reports_modified_events(tmp_path):
     stats = run_dataset(
         tmp_path,
@@ -218,4 +248,57 @@ def test_default_xml_shift_rejects_timestamp_match_outside_events(tmp_path):
             populated=True,
             no_shift=False,
             event_xml=MISLEADING_COMMENT,
+        )
+
+
+def test_payload_shift_requires_timestamp_for_each_xml_event(tmp_path):
+    with pytest.raises(ValueError, match="requires exactly one System/TimeCreated"):
+        run_dataset(
+            tmp_path,
+            populated=True,
+            no_shift=False,
+            shift_payload=True,
+            event_xml=SELF_CLOSING,
+        )
+
+
+@pytest.mark.parametrize("shift_payload", [False, True])
+def test_xml_shift_rejects_invalid_system_time(tmp_path, shift_payload):
+    with pytest.raises(ValueError, match="Invalid Windows Event XML SystemTime"):
+        run_dataset(
+            tmp_path,
+            populated=True,
+            no_shift=False,
+            shift_payload=shift_payload,
+            event_xml=INVALID_TIMESTAMP,
+        )
+
+
+def test_xml_passthrough_preserves_invalid_system_time_bytes(tmp_path):
+    stats = run_dataset(
+        tmp_path,
+        populated=True,
+        no_shift=True,
+        event_xml=INVALID_TIMESTAMP,
+    )
+
+    outputs = list((tmp_path / "output").rglob("security.xml.gz"))
+    assert len(outputs) == 1
+    with gzip.open(outputs[0], "rb") as stream:
+        assert stream.read() == INVALID_TIMESTAMP.encode("utf-8")
+    assert stats.event_count == 1
+    assert stats.events_modified == 0
+    assert stats.errors == 0
+
+
+@pytest.mark.parametrize("shift_payload", [False, True])
+def test_xml_shift_requires_one_timestamp_in_each_event(tmp_path, shift_payload):
+    with pytest.raises(ValueError, match="exactly one System/TimeCreated"):
+        run_dataset(
+            tmp_path,
+            populated=True,
+            no_shift=False,
+            shift_payload=shift_payload,
+            event_xml=DISTRIBUTED_TIMESTAMPS,
+            event_count=2,
         )
