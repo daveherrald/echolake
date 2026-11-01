@@ -669,6 +669,7 @@ def shift_raw_timestamps(
     delta_factor: float = 1.0,
     ceiling: Optional[datetime] = None,
     sourcetype: Optional[str] = None,
+    excluded_spans: Optional[List[Tuple[int, int]]] = None,
 ) -> str:
     """Shift all recognized timestamps in *raw_text* by the echo delta.
 
@@ -690,6 +691,8 @@ def shift_raw_timestamps(
         Maximum allowed timestamp (prevent-future cap).
     sourcetype : str, optional
         Sourcetype identifier — enables running only relevant patterns.
+    excluded_spans : list of tuple, optional
+        Character ranges that broad payload shifting must leave untouched.
 
     Returns
     -------
@@ -704,7 +707,7 @@ def shift_raw_timestamps(
 
     # Collect replacements: (start, end, replacement_text)
     replacements: List[Tuple[int, int, str]] = []
-    used_ranges: List[Tuple[int, int]] = []
+    used_ranges: List[Tuple[int, int]] = list(excluded_spans or [])
 
     for regex, handler in patterns:
         for m in regex.finditer(raw_text):

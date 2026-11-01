@@ -490,12 +490,105 @@ class EchoEngine:
         out = []
         event_count = 0
         events_modified = 0
-        text = b''.join(self.input_source.read_file(file_id)).decode('utf-8', errors='replace')
+        matched = 0
+        raw_bytes = b''.join(self.input_source.read_file(file_id))
+        st_lower = st.lower() if st else ''
+        is_windows_event_xml = (
+            st_lower == 'xmlwineventlog'
+            or st_lower.startswith('xmlwineventlog:')
+        )
+        xml_base_match_count = 0
+        xml_event_count = None
+        xml_event_timestamp_count = None
+        if is_windows_event_xml:
+            import io
+            import xml.etree.ElementTree as ET
+
+            xml_event_count = 0
+            xml_event_timestamp_count = 0
+            depth = 0
+            root_is_event = False
+            active_event_depth = None
+            active_event_timestamp_count = 0
+            name_stack = []
+            try:
+                for action, element in ET.iterparse(
+                    io.BytesIO(raw_bytes),
+                    events=('start', 'end'),
+                ):
+                    if action == 'start':
+                        name = element.tag.rsplit('}', 1)[-1].lower()
+                        if depth == 0:
+                            root_is_event = name == 'event'
+                            if root_is_event:
+                                xml_event_count = 1
+                                active_event_depth = 0
+                                active_event_timestamp_count = 0
+                        elif depth == 1 and not root_is_event and name == 'event':
+                            xml_event_count += 1
+                            active_event_depth = 1
+                            active_event_timestamp_count = 0
+                        elif (
+                            active_event_depth is not None
+                            and depth == active_event_depth + 2
+                            and name == 'timecreated'
+                            and name_stack[-1] == 'system'
+                        ):
+                            system_time = next(
+                                (
+                                    value
+                                    for key, value in element.attrib.items()
+                                    if key.rsplit('}', 1)[-1].lower() == 'systemtime'
+                                ),
+                                None,
+                            )
+                            if system_time is not None:
+                                xml_event_timestamp_count += 1
+                                active_event_timestamp_count += 1
+                                if not no_shift:
+                                    try:
+                                        parse_timestamp(system_time, 'iso8601')
+                                    except Exception as exc:
+                                        raise ValueError(
+                                            f'Invalid Windows Event XML SystemTime in '
+                                            f'{file_id}: {system_time}'
+                                        ) from exc
+                        name_stack.append(name)
+                        depth += 1
+                    else:
+                        depth -= 1
+                        name = name_stack.pop()
+                        if active_event_depth == depth and name == 'event':
+                            if not no_shift and active_event_timestamp_count != 1:
+                                raise ValueError(
+                                    f'Windows Event XML in-place replay requires '
+                                    f'exactly one System/TimeCreated SystemTime per '
+                                    f'event in {file_id}; found '
+                                    f'{active_event_timestamp_count}'
+                                )
+                            active_event_depth = None
+                        element.clear()
+            except ET.ParseError as exc:
+                raise ValueError(f'Invalid Windows Event XML in {file_id}: {exc}') from exc
+
+            try:
+                text = raw_bytes.decode('utf-8')
+            except UnicodeDecodeError as exc:
+                raise ValueError(
+                    f'Windows Event XML in-place replay requires UTF-8 input: {file_id}'
+                ) from exc
+        else:
+            text = raw_bytes.decode('utf-8', errors='replace')
         for line in text.splitlines(keepends=True):
-            base_matches = sum(
-                1 for rx, _ in base_compiled for _ in rx.finditer(line)
-            )
-            if is_xml:
+            base_match_spans = [
+                (match.start(), match.end())
+                for rx, _ in base_compiled
+                for match in rx.finditer(line)
+            ]
+            base_matches = len(base_match_spans)
+            if is_windows_event_xml:
+                xml_base_match_count += base_matches
+            elif is_xml:
                 event_count += base_matches
             elif line.strip():
                 event_count += 1
@@ -508,17 +601,59 @@ class EchoEngine:
                     # the is_base formats, so the targeted pass is skipped here to
                     # avoid shifting the event time twice.
                     line = shift_raw_timestamps(
-                        line, original_base, new_base, df, ceiling, sourcetype=st)
-                else:
-                    # Default: shift only the registry-defined event timestamp.
-                    for rx, fmt in base_compiled:
-                        line, _ = rx.subn(make_repl(fmt), line, count=1)
-                if is_xml:
+                        line,
+                        original_base,
+                        new_base,
+                        df,
+                        ceiling,
+                        sourcetype=st,
+                        excluded_spans=base_match_spans,
+                    )
+                # Always shift the registry-defined event timestamp exactly once.
+                # Payload mode shifts only timestamps outside these base spans.
+                for rx, fmt in base_compiled:
+                    count = 0 if is_windows_event_xml else 1
+                    line, n = rx.subn(make_repl(fmt), line, count=count)
+                    matched += n
+                if is_windows_event_xml:
+                    pass
+                elif is_xml:
                     events_modified += base_matches
                 elif line.strip() and base_matches:
                     events_modified += 1
             out.append(line)
         shifted = ''.join(out)
+
+        if (
+            is_windows_event_xml
+            and not no_shift
+            and xml_event_timestamp_count != xml_event_count
+        ):
+            raise ValueError(
+                f'Windows Event XML in-place replay requires one System/TimeCreated '
+                f'SystemTime per event in {file_id}; found {xml_event_timestamp_count} '
+                f'for {xml_event_count} events'
+            )
+        elif (
+            is_windows_event_xml
+            and not no_shift
+            and xml_base_match_count != xml_event_timestamp_count
+        ):
+            raise ValueError(
+                f'Windows Event XML in-place replay found {xml_base_match_count} '
+                f'event timestamp '
+                f'matches for {xml_event_timestamp_count} event timestamps in {file_id}'
+            )
+        elif is_windows_event_xml and not no_shift:
+            if not shift_payload and matched != xml_event_timestamp_count:
+                raise ValueError(
+                    f'Windows Event XML in-place replay shifted {matched} event '
+                    f'timestamps for {xml_event_timestamp_count} events in {file_id}'
+                )
+            events_modified = xml_event_count if shift_payload else matched
+
+        if is_windows_event_xml:
+            event_count = xml_event_count
 
         if not self.dry_run:
             metadata = {'sourcetype': st} if st else None

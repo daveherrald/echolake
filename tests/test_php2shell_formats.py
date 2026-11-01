@@ -42,7 +42,10 @@ FPM = (
     '[21-Oct-2026 20:00:03] WARNING: [pool www] child 7 exited with code 70\n'
     '172.17.0.1 -  21/Oct/2026:20:00:04 +0000 "POST /upload.php" 200\n'
 )
-MITM = 'REQ 1 2026-10-21T20:00:06Z POST http://t/upload.php | headers=aa | body=bb\n'
+MITM = (
+    'REQ 1 2026-10-21T20:00:06Z POST http://t/upload.php | '
+    'headers=aa | body=bb | seen=2026-10-21T20:00:07Z\n'
+)
 
 
 def _gz(path, text):
@@ -115,9 +118,16 @@ def test_native_formats_preserved_on_inplace_shift(tmp_path):
     mitm = f["mitm.log.gz"]
     assert "REQ 1 2026-11-01T00:00:06Z POST" in mitm
     assert "headers=aa | body=bb" in mitm  # payload untouched
+    assert "seen=2026-10-21T20:00:07Z" in mitm
 
 
 def test_inplace_stats_include_untimestamped_lines_with_payload_shift(tmp_path):
-    _, stats = _run(tmp_path, shift_payload=True)
+    files, stats = _run(tmp_path, shift_payload=True)
     assert stats.event_count == 7
     assert stats.events_modified == 6
+    assert "[01/Nov/2026:00:00:00 +0000]" in files["nginx.log.gz"]
+    assert "[Sun Nov 01 00:00:00.500000 2026]" in files["apache.log.gz"]
+    assert "[01-Nov-2026 00:00:03]" in files["fpm.log.gz"]
+    assert "01/Nov/2026:00:00:04 +0000" in files["fpm.log.gz"]
+    assert "REQ 1 2026-11-01T00:00:06Z POST" in files["mitm.log.gz"]
+    assert "seen=2026-11-01T00:00:07Z" in files["mitm.log.gz"]
