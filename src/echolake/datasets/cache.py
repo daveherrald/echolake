@@ -87,6 +87,25 @@ class DatasetCache:
 
         return DatasetManifest.from_file(manifest_path)
 
+    @staticmethod
+    def write_manifest(
+        manifest_path: Path,
+        manifest: DatasetManifest,
+        manifest_content: Optional[str] = None,
+    ) -> None:
+        """Write a manifest, preserving source YAML when it is available.
+
+        Remote resolvers already have the original YAML text. Writing that text
+        avoids changing comments, aliases, extension fields, or deprecated keys
+        merely because a dataset was cached. Callers that only have a typed
+        manifest still receive the canonical model serialization.
+        """
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        if manifest_content is not None:
+            manifest_path.write_text(manifest_content, encoding="utf-8")
+        else:
+            manifest.to_file(manifest_path)
+
     def _download_s3(
         self,
         uri: str,
@@ -194,6 +213,7 @@ class DatasetCache:
         manifest: DatasetManifest,
         version: Optional[str] = None,
         timeout: int = 30,
+        manifest_content: Optional[str] = None,
     ) -> Path:
         """
         Download and cache a dataset.
@@ -205,6 +225,7 @@ class DatasetCache:
             manifest: Parsed manifest
             version: Optional version string
             timeout: Request timeout in seconds
+            manifest_content: Original manifest YAML, if available
 
         Returns:
             Path to cached dataset directory
@@ -220,7 +241,7 @@ class DatasetCache:
 
         # Save manifest
         manifest_path = cache_path / "dataset.yaml"
-        manifest.to_file(manifest_path)
+        self.write_manifest(manifest_path, manifest, manifest_content)
 
         # Download bundled files
         for bundled_file in manifest.files.bundled:

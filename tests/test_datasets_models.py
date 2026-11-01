@@ -76,9 +76,11 @@ def test_defaults():
     manifest = DatasetManifest.from_file(fixture_path)
 
     assert manifest.defaults is not None
-    # YAML fixture uses 'replay' key; model_validator migrates it to 'echo'
-    assert manifest.defaults.echo is not None
-    assert manifest.defaults.echo["delta_factor"] == 1.0
+    # Preserve the authored legacy key and derive runtime echo defaults separately.
+    assert manifest.defaults.echo is None
+    assert manifest.defaults.replay is not None
+    assert manifest.defaults.replay.delta_factor == 1.0
+    assert manifest.defaults.effective_echo is manifest.defaults.replay
     assert manifest.defaults.schema_type == "raw"
 
 
@@ -323,9 +325,95 @@ def test_resolved_dataset_merged_defaults():
     )
 
     defaults = resolved.get_merged_defaults()
-    # YAML fixture uses 'replay' key; model_validator migrates it to 'echo'
+    # Runtime normalization uses echo while the source model retains replay.
     assert defaults["echo"]["delta_factor"] == 1.0
     assert defaults["schema_type"] == "raw"
+
+
+def test_resolved_dataset_partial_defaults_do_not_reset_dependency_values(tmp_path):
+    parent = DatasetManifest.model_validate(
+        {
+            "metadata": {
+                "name": "parent",
+                "version": "1.0.0",
+                "description": "Parent defaults",
+            },
+            "defaults": {
+                "echo": {
+                    "target_time": "now-1h",
+                    "prevent_future": False,
+                }
+            },
+        }
+    )
+    child = DatasetManifest.model_validate(
+        {
+            "metadata": {
+                "name": "child",
+                "version": "1.0.0",
+                "description": "Child defaults",
+            },
+            "defaults": {"replay": {"delta_factor": 2.0}},
+        }
+    )
+    resolved_parent = ResolvedDataset(manifest=parent, base_path=tmp_path / "parent")
+    resolved_child = ResolvedDataset(
+        manifest=child,
+        base_path=tmp_path / "child",
+        resolved_dependencies=[resolved_parent],
+    )
+
+    defaults = resolved_child.get_merged_defaults()
+
+    assert defaults["echo"] == {
+        "target_time": "now-1h",
+        "prevent_future": False,
+        "delta_factor": 2.0,
+    }
+
+
+def test_resolved_dataset_explicit_null_overrides_dependency_value(tmp_path):
+    parent = DatasetManifest.model_validate(
+        {
+            "metadata": {"name": "parent", "version": "1.0.0", "description": "Parent"},
+            "defaults": {"echo": {"ceiling_time": "now"}},
+        }
+    )
+    child = DatasetManifest.model_validate(
+        {
+            "metadata": {"name": "child", "version": "1.0.0", "description": "Child"},
+            "defaults": {"echo": {"ceiling_time": None}},
+        }
+    )
+    resolved = ResolvedDataset(
+        manifest=child,
+        base_path=tmp_path / "child",
+        resolved_dependencies=[ResolvedDataset(manifest=parent, base_path=tmp_path / "parent")],
+    )
+
+    assert resolved.get_merged_defaults()["echo"]["ceiling_time"] is None
+
+
+def test_resolved_dataset_explicit_null_replay_alias_clears_dependency_echo(tmp_path):
+    parent = DatasetManifest.model_validate(
+        {
+            "metadata": {"name": "parent", "version": "1.0.0", "description": "Parent"},
+            "defaults": {"echo": {"ceiling_time": "now"}},
+        }
+    )
+    child = DatasetManifest.model_validate(
+        {
+            "metadata": {"name": "child", "version": "1.0.0", "description": "Child"},
+            "defaults": {"replay": None},
+        }
+    )
+    resolved = ResolvedDataset(
+        manifest=child,
+        base_path=tmp_path / "child",
+        resolved_dependencies=[ResolvedDataset(manifest=parent, base_path=tmp_path / "parent")],
+    )
+
+    assert resolved.get_merged_defaults()["echo"] is None
 
 
 def test_manifest_save_and_load(tmp_path):

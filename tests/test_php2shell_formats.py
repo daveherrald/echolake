@@ -24,10 +24,10 @@ metadata:
     field: line
 files:
   bundled:
-  - {path: data/nginx.log.gz, format: text, sourcetype: 'nginx:access', schema: native, event_count: 2, log_source: {vendor: nginx, product: nginx, category: web}}
-  - {path: data/apache.log.gz, format: text, sourcetype: 'php:apache', schema: native, event_count: 2, log_source: {vendor: Apache, product: mod_php, category: web}}
-  - {path: data/fpm.log.gz, format: text, sourcetype: 'php:fpm', schema: native, event_count: 2, log_source: {vendor: PHP, product: PHP-FPM, category: web}}
-  - {path: data/mitm.log.gz, format: text, sourcetype: 'mitmproxy:capture', schema: native, event_count: 1, log_source: {vendor: mitmproxy, product: mitmproxy, category: proxy}}
+  - {path: data/nginx.log.gz, format: text, sourcetype: 'nginx:access', schema: raw, event_count: 2, log_source: {vendor: nginx, product: nginx, category: web}}
+  - {path: data/apache.log.gz, format: text, sourcetype: 'php:apache', schema: raw, event_count: 2, log_source: {vendor: Apache, product: mod_php, category: web}}
+  - {path: data/fpm.log.gz, format: text, sourcetype: 'php:fpm', schema: raw, event_count: 2, log_source: {vendor: PHP, product: PHP-FPM, category: web}}
+  - {path: data/mitm.log.gz, format: text, sourcetype: 'mitmproxy:capture', schema: raw, event_count: 1, log_source: {vendor: mitmproxy, product: mitmproxy, category: proxy}}
 """
 
 NGINX = (

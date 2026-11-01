@@ -66,3 +66,9 @@ class TimestampRegistry:
                 return self._registry[original_key]
 
         return None
+
+    def supports(self, sourcetype: Optional[str]) -> bool:
+        """Return whether the registry has timestamp patterns for a sourcetype."""
+        if not sourcetype:
+            return False
+        return self.lookup(sourcetype) is not None

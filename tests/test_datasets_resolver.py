@@ -61,7 +61,7 @@ def test_resolve_http_with_mock(tmp_path):
         }
     }
 
-    manifest_yaml = yaml.safe_dump(manifest_data)
+    manifest_yaml = "# preserve this source comment\n" + yaml.safe_dump(manifest_data)
 
     # Mock HTTP responses
     with patch('requests.get') as mock_get:
@@ -94,6 +94,7 @@ def test_resolve_http_with_mock(tmp_path):
         assert resolved.manifest.metadata.name == "http-dataset"
         assert resolved.manifest.metadata.version == "1.0.0"
         assert resolved.base_path.exists()
+        assert (resolved.base_path / "dataset.yaml").read_text() == manifest_yaml
 
 
 def test_cache_usage(tmp_path):
