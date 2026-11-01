@@ -453,7 +453,12 @@ def validate_set(
     check_files: bool = typer.Option(
         False,
         "--check-files",
-        help="Verify that bundled files exist",
+        help="Verify local paths, runtime schemas, and bundled sourcetypes",
+    ),
+    check_counts: bool = typer.Option(
+        False,
+        "--check-counts",
+        help="Count bundled records and compare them with event_count",
     ),
 ):
     """
@@ -462,6 +467,7 @@ def validate_set(
     Examples:
         echolake validate-dataset ./my-dataset/
         echolake validate-dataset ./my-dataset/dataset.yaml --check-files
+        echolake validate-dataset ./my-dataset/ --check-counts
     """
     try:
         from ..datasets.models import DatasetManifest
@@ -485,17 +491,31 @@ def validate_set(
         console.print(f"Version: {manifest.metadata.version}")
         console.print(f"Description: {manifest.metadata.description}")
 
-        # Check files if requested
-        if check_files:
-            base_path = manifest_path.parent if manifest_path.name == "dataset.yaml" else manifest_path.parent.parent
-            missing = manifest.validate_files_exist(base_path)
-            if missing:
-                console.print(f"\n[red]Missing files:[/red]")
-                for f in missing:
-                    console.print(f"  - {f}")
+        # Run context-aware offline checks when requested. Count checks imply
+        # path checks, but remote objects are never downloaded by validation.
+        if check_files or check_counts:
+            from ..datasets.validation import validate_manifest_files
+
+            report = validate_manifest_files(
+                manifest,
+                manifest_path.parent,
+                check_counts=check_counts,
+            )
+            for warning in report.warnings:
+                console.print(
+                    f"\n[yellow]⚠[/yellow] {warning.code} at {warning.location}: "
+                    f"{warning.message}"
+                )
+            if report.errors:
+                console.print("\n[red]Dataset validation failed:[/red]")
+                for error in report.errors:
+                    console.print(f"  - {error.code} at {error.location}: {error.message}")
                 raise typer.Exit(1)
-            else:
-                console.print(f"\n[green]✓[/green] All bundled files exist ({len(manifest.files.bundled)} files)")
+
+            message = f"Checked {report.files_checked} local files"
+            if check_counts:
+                message += f" and {report.counts_checked} declared counts"
+            console.print(f"\n[green]✓[/green] {message}")
 
         # Validate a referenced Attack Flow document, if present. This is a
         # non-fatal, best-effort check: it is skipped (not failed) when the

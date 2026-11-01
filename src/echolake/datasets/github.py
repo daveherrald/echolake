@@ -285,7 +285,11 @@ class GitHubClient:
         cache_path.mkdir(parents=True, exist_ok=True)
 
         # Save manifest
-        manifest.to_file(cache_path / "dataset.yaml")
+        cache.write_manifest(
+            cache_path / "dataset.yaml",
+            manifest,
+            manifest_content,
+        )
 
         # Download bundled files
         for bundled_file in manifest.files.bundled:

@@ -9,6 +9,7 @@ validation against the Attack Flow schema when the validator is installed.
 
 import json
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -16,10 +17,11 @@ import yaml
 
 from echolake.datasets.attack_flow_build import (
     AttackFlowBuildError,
+    _props,
     build_attack_flow,
     write_attack_flow,
 )
-from echolake.datasets.models import DatasetManifest
+from echolake.datasets.models import DatasetManifest, ScenarioObservable
 
 SHA256 = "a" * 64
 
@@ -30,6 +32,7 @@ SAMPLE = {
         "description": "A synthetic four-stage intrusion used to exercise the scenario blocks.",
         "created": "2026-10-20",
         "timestamp_range": {"earliest": "2026-01-01T10:00:00Z", "latest": "2026-01-01T11:00:00Z"},
+        "attack_flow": {"path": "attack_flow.json"},
         "mitre_attack": {
             "techniques": [
                 {"id": "T1566", "name": "Phishing", "tactics": ["initial-access"]},
@@ -161,6 +164,20 @@ def test_indicator_patterns_and_phases():
     assert ind["203.0.113.9"]["labels"] == ["T1071.001"]
 
 
+def test_stix_properties_map_merges_with_direct_fields():
+    observable = ScenarioObservable(
+        id="process",
+        type="process",
+        properties={"pid": 123, "command_line": "from properties"},
+        command_line="from direct field",
+    )
+
+    assert _props(observable) == {
+        "pid": 123,
+        "command_line": "from direct field",
+    }
+
+
 def test_sigma_observable_becomes_external_reference():
     bundle = build_attack_flow(DatasetManifest.model_validate(SAMPLE))
     # No inline Sigma anywhere in the bundle.
@@ -186,6 +203,23 @@ def test_deterministic_and_canonical_sco_ids():
     accts = {o["account_login"]: o for o in _by_type(a, "user-account")}
     assert accts["svc-backup"]["is_service_account"] is True
     assert accts["alice"]["display_name"] == "Alice Example"
+    svc_asset = next(
+        asset
+        for asset in _by_type(a, "attack-asset")
+        if asset["object_ref"] == accts["svc-backup"]["id"]
+    )
+    assert svc_asset["name"] == "svc-backup"
+
+
+def test_offset_metadata_timestamp_is_normalized_to_utc():
+    sample = deepcopy(SAMPLE)
+    sample["metadata"]["updated"] = "2026-10-21T12:00:00+02:00"
+
+    bundle = build_attack_flow(DatasetManifest.model_validate(sample))
+
+    flow = _by_type(bundle, "attack-flow")[0]
+    assert flow["created"] == "2026-10-21T10:00:00Z"
+    assert flow["modified"] == "2026-10-21T10:00:00Z"
 
 
 def test_write_and_validate(tmp_path: Path):

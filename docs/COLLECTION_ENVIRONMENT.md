@@ -1,18 +1,19 @@
 # Collection Environment Metadata
 
 **Version:** 1.0.0
-**Last Updated:** 2026-03-14
+**Last Updated:** 2026-11-01
 
-Specification for describing the environment that produced dataset telemetry. This metadata helps consumers understand what security controls were active, what audit policies were in place, and therefore what telemetry to expect — and what might be absent.
+Specification for describing the environment that produced dataset telemetry. This metadata helps consumers understand what security controls were active, what audit policies were in place, and therefore what telemetry to expect or what might be absent.
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Schema](#schema)
-3. [Platform Specifications](#platform-specifications)
-4. [Examples](#examples)
-5. [Best Practices](#best-practices)
-6. [Extensibility](#extensibility)
+2. [Contract Behavior](#contract-behavior)
+3. [Schema](#schema)
+4. [Platform Specifications](#platform-specifications)
+5. [Examples](#examples)
+6. [Best Practices](#best-practices)
+7. [Extensibility](#extensibility)
 
 ---
 
@@ -20,24 +21,55 @@ Specification for describing the environment that produced dataset telemetry. Th
 
 ### The Problem
 
-A dataset containing Windows Sysmon events is only interpretable if you know the Sysmon configuration. A dataset showing a "blocked" credential dump only makes sense if you know Defender was active. A dataset missing DNS logs might mean DNS wasn't collected — or it might mean the technique didn't generate DNS traffic.
+A dataset containing Windows Sysmon events is only interpretable if you know the Sysmon configuration. A dataset showing a "blocked" credential dump only makes sense if you know Defender was active. A dataset missing DNS logs might mean DNS wasn't collected, or it might mean the technique didn't generate DNS traffic.
 
-Without environment context, consumers of a dataset must guess at what the collection infrastructure looked like. This leads to incorrect assumptions — especially for AI agents processing datasets programmatically.
+Without environment context, consumers of a dataset must guess at what the collection infrastructure looked like. This leads to incorrect assumptions, especially for AI agents processing datasets programmatically.
 
 ### The Solution
 
 The `environment` section in `dataset.yaml` provides structured metadata about the collection environment. It is:
 
-- **Platform-agnostic at the top level** — works for Windows, Linux, macOS, cloud, network, containers
-- **Platform-specific where it matters** — each platform type has its own structured fields
-- **Optional but recommended** — every field is optional, include what's relevant
-- **Descriptive, not prescriptive** — describes what WAS configured, not what SHOULD be
+- **Platform-agnostic at the top level.** Works for Windows, Linux, macOS, cloud, network, and containers.
+- **Platform-specific where it matters.** Each platform type has its own structured fields.
+- **Optional but recommended.** Every field is optional. Include what is relevant.
+- **Descriptive, not prescriptive.** Describes what was configured.
+
+---
+
+## Contract Behavior
+
+`environment` is a typed part of manifest contract 1.0.0. Unknown keys are
+rejected at each typed boundary. Most environment models declare an
+`extensions` map for namespaced custom JSON. Put a custom field there instead
+of placing it beside typed fields.
+
+```yaml
+environment:
+  host:
+    hostname: LAB-WS02
+    extensions:
+      com.example.asset_id: asset-204
+  extensions:
+    com.example.lab_generation: 3
+```
+
+Some documented maps are intentionally free-form because their provider or
+tool schemas change independently. These include Linux `auditd`,
+`security_module`, `endpoint_protection`, and `syslog`; macOS
+`endpoint_protection` and `unified_logging`; cloud `logging`; container
+`monitoring` and `logging`; and Windows `event_forwarding` and `log_sizes`.
+Their values must still be valid JSON-compatible YAML.
+
+The canonical writer preserves authored environment values, including explicit
+values that match defaults. See
+[Dataset Manifest Migration](DATASET_MANIFEST_MIGRATION.md) for moving custom
+fields into supported extension boundaries.
 
 ---
 
 ## Schema
 
-The `environment` section is a new top-level key in `dataset.yaml`, alongside `metadata`, `files`, `dependencies`, and `defaults`.
+The `environment` section is an optional top-level key in `dataset.yaml`.
 
 ```yaml
 environment:
@@ -48,14 +80,27 @@ environment:
     os_version: string          # OS version string
     architecture: string        # CPU architecture (x86_64, arm64, etc.)
     domain: string              # Domain/realm membership (if applicable)
+    workgroup: string
     platform: string            # Virtualization/cloud platform (optional)
+    network: string
+    ip: string
+    extensions: {name: JSONValue}
 
   # === COLLECTION CONTEXT ===
   collection:
     method: string              # How data was collected (e.g., "agent", "syslog", "api", "packet-capture")
     collector: string           # Collection agent/tool (e.g., "Cribl Edge", "Filebeat", "Fluentd")
     channels: [string]          # Log channels/sources collected
+    sensor: string
+    shipper: string
+    ingest: string
+    defender: string
+    sysmon: string
+    audit_policy: string
+    capture_proxy: string
+    delivery: string
     notes: string               # Free-text collection notes
+    extensions: {name: JSONValue}
 
   # === EXECUTION CONTEXT (for generated/simulated data) ===
   execution:
@@ -64,7 +109,20 @@ environment:
     tool: string                # Test framework (e.g., "Atomic Red Team", "Caldera", "manual")
     tool_version: string        # Test framework version
     isolation: string           # Test isolation approach (e.g., "per-test cleanup", "snapshot restore")
+    binary: string
+    args: [string]
+    launch: string
+    actor: string
+    patient_zero: string
+    pivot_account: string
+    ot_target: string
+    c2: string
+    target_endpoint: string
+    vulnerability: string
+    targets: string
+    rce_principal: string
     notes: string               # Free-text execution notes
+    extensions: {name: JSONValue}
 
   # === SECURITY CONTROLS ===
   # Platform-specific. Use the appropriate key for your platform.
@@ -76,6 +134,8 @@ environment:
   cloud: CloudEnvironment       # Cloud provider controls
   network: NetworkEnvironment   # Network device/capture context
   container: ContainerEnvironment  # Container runtime context
+  versions: {name: string}      # Named product or environment versions
+  extensions: {name: JSONValue}
 ```
 
 **All fields are optional.** Include what is relevant and known.
@@ -99,7 +159,8 @@ windows:
     image_load: bool            # EID 7 enabled
     dns_query: bool             # EID 22 enabled
     process_create_mode: string # "include", "exclude", or "all"
-    notes: string               # Free-text (e.g., "filtered config — not all processes captured")
+    notes: string               # Free-text (e.g., "filtered config; not all processes captured")
+    extensions: {name: JSONValue}
 
   # === AUDIT POLICY ===
   audit_policy:
@@ -119,6 +180,7 @@ windows:
     kerberos: string
     credential_validation: string
     notes: string
+    extensions: {name: JSONValue}
 
   # === POWERSHELL LOGGING ===
   powershell:
@@ -129,6 +191,7 @@ windows:
     transcription: bool
     constrained_language_mode: bool
     notes: string
+    extensions: {name: JSONValue}
 
   # === ENDPOINT PROTECTION ===
   endpoint_protection:
@@ -140,12 +203,18 @@ windows:
     tamper_protection: bool
     cloud_protection: bool
     signature_version: string
+    antivirus_enabled: bool
+    disabled_via: string
     notes: string
+    extensions: {name: JSONValue}
 
   # === ADDITIONAL LOGGING ===
   etw_providers: [string]        # Additional ETW providers enabled
   wef_enabled: bool              # Windows Event Forwarding
+  event_forwarding: {name: JSONValue}
+  log_sizes: {name: JSONValue}
   notes: string                  # General Windows notes
+  extensions: {name: JSONValue}
 ```
 
 ### LinuxEnvironment
@@ -183,6 +252,7 @@ linux:
   ebpf_monitoring: string        # e.g., "Falco", "Tracee", "none"
   shell_logging: bool            # bash/zsh command history to syslog
   notes: string
+  extensions: {name: JSONValue}
 ```
 
 ### MacOSEnvironment
@@ -206,6 +276,7 @@ macos:
   gatekeeper: bool
   sip_enabled: bool              # System Integrity Protection
   notes: string
+  extensions: {name: JSONValue}
 ```
 
 ### CloudEnvironment
@@ -241,6 +312,7 @@ cloud:
     notes: string
 
   notes: string
+  extensions: {name: JSONValue}
 ```
 
 ### NetworkEnvironment
@@ -253,7 +325,18 @@ network:
   bpf_filter: string             # Capture filter if applicable
   protocols_monitored: [string]  # e.g., ["http", "dns", "tls", "smb"]
   encryption_visibility: string  # "none", "tls_inspection", "decrypted"
+  zeek:
+    installed: bool
+    logs: [string]
+    capture_point: string
+    extensions: {name: JSONValue}
+  proxy:
+    type: string
+    host: string
+    port: integer
+    extensions: {name: JSONValue}
   notes: string
+  extensions: {name: JSONValue}
 ```
 
 ### ContainerEnvironment
@@ -263,12 +346,16 @@ container:
   runtime: string                # "docker", "containerd", "cri-o"
   orchestrator: string           # "kubernetes", "ecs", "nomad", "standalone"
   orchestrator_version: string
+  cluster: string
+  namespace: string
   monitoring:
     product: string              # e.g., "Falco", "Sysdig", "Aqua"
     audit_logging: bool          # K8s audit log enabled
     runtime_protection: bool
     notes: string
+  logging: {name: JSONValue}
   notes: string
+  extensions: {name: JSONValue}
 ```
 
 ---
@@ -313,7 +400,7 @@ environment:
       dns_query: true
       process_create_mode: include
       notes: >
-        Filtered config — ProcessCreate uses include rules matching known-suspicious
+        Filtered config. ProcessCreate uses include rules matching known-suspicious
         patterns. Not all process creations are captured in Sysmon. Security 4688
         with command-line auditing provides complementary full coverage.
 
@@ -430,7 +517,7 @@ environment:
     protocols_monitored: [http, dns, tls, smb, ssh, ftp, smtp]
     encryption_visibility: none
     notes: >
-      No TLS inspection. Encrypted payloads are not visible — only
+      No TLS inspection. Encrypted payloads are not visible. Only
       connection metadata, JA4 fingerprints, and certificate information.
       HTTP/2 traffic over TLS appears only as connection logs.
 ```
@@ -457,11 +544,11 @@ The `notes` fields exist for a reason. If you know the Sysmon config filters out
 - Replace real hostnames with descriptive names if needed
 - Redact account IDs or subscription IDs for public datasets
 - Don't include API keys, tokens, or credentials
-- Config hashes are fine to include — they identify the config without revealing its contents
+- Config hashes are fine to include because they identify the config without revealing its contents
 
 ### Use Notes for Context
 
-The structured fields capture the "what." Use `notes` for the "so what" — the implications for the data. For example:
+The structured fields capture the configuration. Use `notes` for its implications for the data. For example:
 
 ```yaml
 # Good: explains impact on the data
@@ -478,48 +565,67 @@ notes: "Sysmon is installed and running"
 
 ## Extensibility
 
-### Adding New Platforms
-
-The platform keys (`windows`, `linux`, `macos`, `cloud`, `network`, `container`) are not a closed set. New platforms can be added as needed:
+The typed platform keys are `windows`, `linux`, `macos`, `cloud`, `network`,
+and `container`. A direct `environment.iot` key is rejected by contract 1.0.0.
+Represent an unsupported platform in the top-level `extensions` map until the
+contract adds a typed field:
 
 ```yaml
 environment:
-  # Standard platforms
-  windows: { ... }
-
-  # Custom/new platform
-  iot:
-    device_type: "smart thermostat"
-    firmware_version: "2.4.1"
-    protocol: "MQTT"
-    logging:
-      local_syslog: true
-      cloud_telemetry: true
+  extensions:
+    com.example.iot:
+      device_type: smart-thermostat
+      firmware_version: "2.4.1"
+      protocol: MQTT
 ```
 
 ### Adding New Fields to Existing Platforms
 
-All platform specifications are open for extension. Add fields as needed — consumers should ignore fields they don't recognize:
+Use the nearest declared `extensions` map. Direct unknown keys are rejected.
 
 ```yaml
-windows:
-  sysmon:
-    installed: true
-    version: "15.15"
-    # Custom field — not in the base spec
-    custom_rules_count: 12
+environment:
+  windows:
+    sysmon:
+      installed: true
+      version: "15.15"
+      extensions:
+        com.example.custom_rules_count: 12
 ```
+
+Provider-specific maps that are documented as free-form do not need an
+`extensions` wrapper. For example, keys inside `cloud.logging` and
+`container.monitoring` are accepted as JSON-compatible YAML.
 
 ### Referencing External Configuration
 
-For large configurations (e.g., full Sysmon XML), reference an external file rather than inlining:
+The typed Sysmon model has `config_source` and `config_hash`. A custom local
+configuration path can be recorded in `extensions`:
 
 ```yaml
-windows:
-  sysmon:
-    installed: true
-    version: "15.15"
-    config_source: sysmon-modular
-    config_file: config/sysmonconfig.xml   # Relative to dataset root
-    config_hash: "SHA256=4516404F..."
+environment:
+  windows:
+    sysmon:
+      installed: true
+      version: "15.15"
+      config_source: sysmon-modular
+      config_hash: "SHA256=4516404F..."
+      extensions:
+        com.example.config_path: config/sysmonconfig.xml
 ```
+
+Offline dataset validation does not interpret paths inside `extensions`, so it
+does not verify this custom path. Declare files that must be validated under
+`files.bundled` as well.
+
+## Related Documentation
+
+- [Dataset Format](DATASET_FORMAT.md)
+- [Dataset Manifest Migration](DATASET_MANIFEST_MIGRATION.md)
+- [Log Source Metadata](LOG_SOURCE_METADATA.md)
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2026-11-01 | Documented typed fields, strict extension boundaries, and canonical preservation |

@@ -31,8 +31,11 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+from dateutil.parser import isoparse
 
 from .models import (
     ATTACK_TACTICS,
@@ -59,7 +62,7 @@ EXT_BLOCK = {EXT_ID: {"extension_type": "new-sdo"}}
 _ANNOTATIONS = {
     "id", "type", "indicator_types", "kill_chain_phases", "techniques",
     "confidence", "first_seen", "last_seen", "description", "pattern",
-    "pattern_type", "rule", "role", "observables",
+    "pattern_type", "rule", "role", "observables", "properties",
 }
 
 
@@ -80,10 +83,15 @@ def _ts(manifest: DatasetManifest) -> str:
     date = manifest.metadata.updated or manifest.metadata.created
     if not date:
         raise AttackFlowBuildError("metadata.created (or updated) is required to stamp the flow")
-    date = str(date)
-    if "T" in date:
-        return date if date.endswith("Z") else date + "Z"
-    return f"{date}T00:00:00.000Z"
+    try:
+        parsed = isoparse(str(date))
+    except (TypeError, ValueError) as exc:
+        raise AttackFlowBuildError("metadata.created or updated must use ISO 8601") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed.isoformat().replace("+00:00", "Z")
 
 
 def _technique_url(tid: str) -> str:
@@ -97,9 +105,21 @@ def _escape(s: str) -> str:
 
 def _props(obj: Union[ScenarioEntity, ScenarioObservable]) -> Dict[str, Any]:
     """STIX properties for an entity/observable: declared fields plus extras, minus annotations."""
-    data = obj.model_dump(exclude_none=True)
-    data.update(obj.model_extra or {})
-    return {k: v for k, v in data.items() if k not in _ANNOTATIONS}
+    data = obj.model_dump(exclude_none=True, exclude_defaults=True)
+    properties = data.pop("properties", None)
+    extras = dict(obj.model_extra or {})
+    extra_properties = extras.pop("properties", None)
+    if properties is None:
+        properties = extra_properties
+
+    merged: Dict[str, Any] = {}
+    if isinstance(properties, dict):
+        merged.update(properties)
+    # Direct fields and legacy direct extras win on collision. This keeps old
+    # manifests working while allowing the typed contract to group STIX fields.
+    merged.update(data)
+    merged.update(extras)
+    return {k: v for k, v in merged.items() if k not in _ANNOTATIONS}
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +407,7 @@ def build_attack_flow(manifest: DatasetManifest) -> Dict[str, Any]:
         asset: Dict[str, Any] = {
             "type": "attack-asset", "spec_version": "2.1",
             "id": _sid(ns, "attack-asset", ent.id), "created": ts, "modified": ts,
-            "name": ent.name or (ent.model_extra or {}).get("account_login") or ent.id,
+            "name": ent.name or ent.account_login or ent.user_id or ent.id,
             "object_ref": ent_id[ent.id], "extensions": EXT_BLOCK,
         }
         if desc:

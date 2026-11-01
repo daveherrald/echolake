@@ -170,6 +170,7 @@ class DatasetResolver:
             manifest=manifest,
             version=version,
             timeout=timeout,
+            manifest_content=response.text,
         )
 
         # Resolve dependencies

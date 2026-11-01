@@ -1,19 +1,21 @@
 # Log Source and Platform Metadata
 
 **Version:** 1.0.0
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-11-01
 
 Complete guide to classifying log sources and specifying platform-specific metadata in EchoLake datasets.
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Log Source Classification](#log-source-classification)
-3. [Platform Metadata](#platform-metadata)
-4. [Common Platforms](#common-platforms)
-5. [Examples](#examples)
-6. [Best Practices](#best-practices)
-7. [Extensibility](#extensibility)
+2. [Runtime Sourcetype](#runtime-sourcetype)
+3. [Log Source Classification](#log-source-classification)
+4. [Platform Metadata](#platform-metadata)
+5. [Validation Contract](#validation-contract)
+6. [Common Platforms](#common-platforms)
+7. [Examples](#examples)
+8. [Best Practices](#best-practices)
+9. [Extensibility](#extensibility)
 
 ---
 
@@ -31,12 +33,42 @@ Different SIEM platforms require different metadata to correctly ingest and clas
 
 ### The Solution
 
-EchoLake datasets support **two-tier metadata**:
+EchoLake files can carry three related fields:
 
-1. **log_source** - Vendor-neutral classification (portable across platforms)
-2. **platforms** - Platform-specific metadata (extensible, no validation)
+1. **sourcetype** - Runtime timestamp extraction and replay behavior
+2. **log_source** - Vendor-neutral classification
+3. **platforms** - Platform-specific metadata with free-form JSON values
 
-**Both are optional** - use what you need.
+All three are optional, but bundled files should declare `sourcetype` whenever a
+specific timestamp rule exists.
+
+---
+
+## Runtime Sourcetype
+
+`sourcetype` selects an entry from EchoLake's timestamp registry. The registry
+defines how the base event timestamp is found and whether it can be shifted in
+place.
+
+```yaml
+files:
+  bundled:
+    - path: logs/security.xml
+      format: xml
+      schema: raw
+      sourcetype: XmlWinEventLog
+```
+
+The manifest parser requires a present sourcetype to be a nonempty, trimmed
+string without control characters. Context-aware offline validation applies
+additional behavior:
+
+- A bundled sourcetype that is not registered produces a warning. Raw replay can still use dataset custom patterns or generic fallback patterns.
+- An omitted bundled sourcetype produces a warning and uses dataset or generic fallback rules.
+- A remote reference is checked for string syntax only. Offline validation does not check remote registry membership.
+
+`sourcetype` controls runtime timestamp handling. `log_source` and `platforms`
+describe the data for people and downstream systems. They do not replace it.
 
 ---
 
@@ -54,10 +86,13 @@ log_source:
   product: string         # Product name (optional)
   category: string        # Log category (optional)
   subcategory: string     # Subcategory (optional)
-  event_ids: [int|str]   # Event IDs (optional)
+  event_ids: [int|str]    # Event IDs (optional)
+  extensions:             # Namespaced custom JSON (optional)
+    <name>: <JSONValue>
 ```
 
-**All fields are optional** - use what makes sense for your logs.
+All fields are optional. The object is strict, so custom fields belong under
+`extensions`.
 
 ### Field Descriptions
 
@@ -214,6 +249,45 @@ platforms:
     whatever: "fields"
     you: "need"
 ```
+
+---
+
+## Validation Contract
+
+`BundledFile`, `FileReference`, and `LogSource` are strict typed models.
+Unknown keys on those objects are rejected. Each declares an `extensions` map
+for namespaced custom JSON. `platforms` is a declared free-form map, so any
+platform name and JSON-compatible nested structure is accepted inside it.
+
+```yaml
+files:
+  bundled:
+    - path: logs/events.jsonl
+      schema: raw
+      sourcetype: WinEventLog
+      log_source:
+        vendor: Example
+        product: Sensor
+        extensions:
+          com.example.feed: premium
+      platforms:
+        custom_siem:
+          route: security-events
+      extensions:
+        com.example.capture_batch: 42
+```
+
+The only supported runtime schema is `raw`, or an omitted schema. This applies
+to bundled files, remote references, and `defaults.schema`. File formats are
+`auto`, `csv`, `jsonl`, `json`, `text`, and `xml`.
+
+`echolake validate-dataset PATH --check-files` verifies bundled paths and
+reports warnings for missing or unregistered bundled sourcetypes. Raw replay
+can use dataset custom patterns or generic fallback patterns in either case.
+`--check-counts` also compares declared bundled `event_count` values with the
+events emitted by the current EchoLake replay path for the declared format.
+Remote objects are not downloaded during offline validation, so their contents,
+checksums, counts, and registry membership remain unchecked.
 
 ---
 
@@ -640,14 +714,29 @@ platforms:
 
 ### Fully Extensible Design
 
-**No validation** = **Any platform works**
+This free-form behavior applies inside `platforms`. The surrounding file object
+and its `log_source` object remain strict.
 
-The `platforms` field accepts **any structure** with **no validation**. This means:
+The `platforms` field accepts any JSON-compatible structure. This means:
 
 ✅ New platforms work immediately (no code changes)
 ✅ Custom/proprietary platforms supported
 ✅ Platform-specific features (nested objects, arrays, etc.)
 ✅ Future-proof (platforms evolve without breaking changes)
+
+Use `log_source.extensions` for custom vendor-neutral classification and the
+file-level `extensions` map for custom capture metadata:
+
+```yaml
+log_source:
+  vendor: Example
+  product: Endpoint Sensor
+  extensions:
+    com.example.telemetry_tier: enhanced
+
+extensions:
+  com.example.capture_batch: 42
+```
 
 ### Adding New Platforms
 
@@ -737,6 +826,7 @@ files:
   references:
     - uri: "https://..."
       description: "Sysmon process creation events"  # Actual human description
+      sourcetype: XmlWinEventLog
 
       log_source:
         vendor: "Microsoft"
@@ -759,6 +849,7 @@ files:
 ## Related Documentation
 
 - **[DATASET_FORMAT.md](DATASET_FORMAT.md)** - Complete dataset specification
+- **[DATASET_MANIFEST_MIGRATION.md](DATASET_MANIFEST_MIGRATION.md)** - Contract 1.0.0 migration steps
 - **[FEATURES.md](FEATURES.md)** - All EchoLake features
 - **[Examples](../examples/datasets/)** - Real-world examples
 
@@ -768,7 +859,8 @@ files:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2026-01-28 | Initial documentation for log source and platform metadata |
+| 1.0.0 | 2026-11-01 | Added sourcetype behavior and strict extension boundaries |
+| 0.9.0 | 2026-01-28 | Initial documentation for log source and platform metadata |
 
 ---
 

@@ -1,17 +1,9 @@
 """Dataset manifest loading."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-import yaml
-from pydantic import BaseModel
+from typing import Any, Dict, List, Tuple
 
-
-class DatasetManifest(BaseModel):
-    """Dataset manifest structure."""
-    metadata: Dict[str, Any]
-    files: Dict[str, Any]
-    defaults: Optional[Dict[str, Any]] = None
-    notes: Optional[str] = None
+from .models import DatasetManifest
 
 
 def load_dataset(dataset_ref: str) -> Tuple[Path, DatasetManifest]:
@@ -49,11 +41,8 @@ def load_dataset(dataset_ref: str) -> Tuple[Path, DatasetManifest]:
             f"Expected dataset.yaml in {dataset_path}"
         )
 
-    # Load and parse manifest
-    with open(manifest_path, 'r') as f:
-        manifest_data = yaml.safe_load(f)
-
-    manifest = DatasetManifest(**manifest_data)
+    # Use the canonical, fully typed manifest contract.
+    manifest = DatasetManifest.from_file(manifest_path)
 
     return dataset_path, manifest
 
@@ -71,18 +60,11 @@ def get_bundled_files(dataset_path: Path, manifest: DatasetManifest) -> List[Pat
     """
     bundled_files = []
 
-    files_section = manifest.files.get("bundled", [])
-    for file_entry in files_section:
-        if isinstance(file_entry, dict):
-            file_path = file_entry.get("path")
-        else:
-            file_path = file_entry
-
-        if file_path:
-            # Resolve relative to dataset root
-            full_path = dataset_path / file_path
-            if full_path.exists():
-                bundled_files.append(full_path)
+    for file_entry in manifest.files.bundled:
+        # Resolve relative to dataset root.
+        full_path = dataset_path / file_entry.path
+        if full_path.exists():
+            bundled_files.append(full_path)
 
     return bundled_files
 
@@ -97,4 +79,10 @@ def get_dataset_defaults(manifest: DatasetManifest) -> Dict[str, Any]:
     Returns:
         Dictionary of default configuration values
     """
-    return manifest.defaults or {}
+    if manifest.defaults is None:
+        return {}
+    return manifest.defaults.model_dump(
+        exclude_none=False,
+        exclude_unset=True,
+        by_alias=False,
+    )

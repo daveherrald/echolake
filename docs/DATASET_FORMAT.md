@@ -1,21 +1,22 @@
 # EchoLake Dataset Format Specification
 
 **Version:** 1.0.0
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-11-01
 
 This document provides comprehensive documentation for the EchoLake dataset manifest format (`dataset.yaml`).
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [File Structure](#file-structure)
-3. [Complete Specification](#complete-specification)
-4. [Field Reference](#field-reference)
-5. [Examples](#examples)
-6. [Validation Rules](#validation-rules)
-7. [Best Practices](#best-practices)
-8. [Common Patterns](#common-patterns)
-9. [Troubleshooting](#troubleshooting)
+2. [Manifest Contract](#manifest-contract)
+3. [File Structure](#file-structure)
+4. [Complete Specification](#complete-specification)
+5. [Field Reference](#field-reference)
+6. [Examples](#examples)
+7. [Validation Rules](#validation-rules)
+8. [Best Practices](#best-practices)
+9. [Common Patterns](#common-patterns)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -62,6 +63,65 @@ meta-dataset/
 
 ---
 
+## Manifest Contract
+
+`manifest_version` versions the shape and validation rules of `dataset.yaml`. The
+only supported value is `"1.0.0"`.
+
+```yaml
+manifest_version: "1.0.0"
+metadata:
+  name: example-dataset
+  version: "1.0.0"
+  description: Example dataset
+```
+
+The manifest version is separate from `metadata.version`. The former selects the
+manifest contract. The latter versions the dataset content. Manifests that omit
+`manifest_version` load as version 1 for compatibility with existing datasets.
+The canonical writer always emits `manifest_version: "1.0.0"`.
+
+Version 1 is strict. Unknown keys are rejected at typed manifest boundaries.
+Put supported custom JSON in an `extensions` map at a boundary that declares
+one. Use `entities[].properties` and `observables[].properties` for additional
+STIX properties. `files.*.platforms` remains a free-form platform metadata map.
+Several documented platform detail maps, such as `environment.cloud.logging`,
+are also intentionally free-form. A custom key placed directly beside typed
+fields is invalid.
+
+```yaml
+manifest_version: "1.0.0"     # Optional on input, always written canonically
+
+metadata:
+  name: example-dataset
+  version: "1.0.0"
+  description: Example dataset
+  extensions:
+    com.example.catalog_id: ds-1024
+```
+
+Parsing and serialization preserve authored fields, including explicitly
+authored values that equal defaults. `DatasetManifest.to_file()` writes a
+canonical YAML representation, adds the manifest version, and keeps an authored
+`defaults.replay` key as `replay`. At runtime, `defaults.effective_echo` and
+resolved dataset defaults normalize `replay` to the echo configuration without
+mutating the source model.
+
+The Python API returns typed models. Existing read-only dict-style access is
+supported during migration:
+
+```python
+manifest = DatasetManifest.from_file("dataset.yaml")
+name = manifest.metadata.name
+same_name = manifest.metadata["name"]
+version = manifest.metadata.get("version")
+```
+
+See [Dataset Manifest Migration](DATASET_MANIFEST_MIGRATION.md) for the upgrade
+procedure and compatibility details.
+
+---
+
 ## File Structure
 
 ### Required File
@@ -95,6 +155,8 @@ mitre-attack-t1078/
 ### Full Schema
 
 ```yaml
+manifest_version: "1.0.0"     # Optional on input, always written canonically
+
 metadata:
   # === REQUIRED FIELDS ===
   name: string                # Dataset identifier (lowercase, hyphens)
@@ -107,6 +169,15 @@ metadata:
   updated: string             # Last update date (ISO8601 or YYYY-MM-DD)
   license: string             # License (e.g., "MIT", "Apache-2.0", "Proprietary")
   tags: [string]              # Searchable tags
+  timestamp_range:            # Optional ordered, timezone-aware range
+    earliest: string
+    latest: string
+    field: string
+  source_url: string
+  data_sources: [MetadataDataSource]
+  size: {name: string}
+  checksums: {name: string}
+  references: [string]
 
   # === MITRE ATT&CK MAPPING (OPTIONAL) ===
   mitre_attack:
@@ -115,6 +186,8 @@ metadata:
         name: string          # Technique name
         tactics: [string]     # Associated tactics
     tactics: [string]         # Overall tactics covered
+  attack_flow: AttackFlowRef
+  extensions: {name: JSONValue}
 
 # === FILES SECTION ===
 files:
@@ -134,12 +207,15 @@ environment:
   cloud: CloudEnvironment       # Cloud provider controls
   network: NetworkEnvironment   # Network capture context
   container: ContainerEnvironment  # Container runtime context
+  versions: {name: string}
+  extensions: {name: JSONValue}
 
 # === PROVENANCE (OPTIONAL) ===
 # Build and verification metadata for datasets produced by automated pipelines.
 provenance:
   build:
-    host:                         # Build-time host details (ephemeral)
+    host:                         # Object or legacy string
+      hostname: string
       vmid: integer               # VM identifier
       ip: string                  # IP address at build time
     timestamps:
@@ -147,13 +223,41 @@ provenance:
       end_epoch: integer          # Unix epoch when collection ended
     tool: string                  # Build tool or pipeline identifier
     notes: string                 # Free-text build notes
+    surface: string
+    ingest_time_collapsed_to_event_time: bool
+    filtered_orchestration_events: integer
+    window_utc: {start: string, end: string}
+    campaign_utc: {t0: string, t_end: string}
+    translation: {from: string, to: string, reason: string}
+    seed_detection: string
+    extensions: {name: JSONValue}
   verification:                   # Pipeline integrity checks
     source_counts:                # Event counts at the source
       <channel>: integer          # e.g., sysmon: 24, security: 21
     dest_counts:                  # Event counts at the destination
       <channel>: integer
-    table: string                 # Destination table/index used for verification
-    host_filter: string           # Host filter applied during verification
+    signatures: {name: integer}
+    window_epoch: [integer, integer]
+    scaffolding_leaks: integer
+    lineage_clean: bool
+    technique_parent: [string]
+    total_events: integer
+    note: string
+    extensions: {name: JSONValue}
+  regenerated:
+    from: string
+    reason: string
+    total_events: integer
+  extensions: {name: JSONValue}
+
+# === QUALITY METADATA (OPTIONAL) ===
+badactors_quality: BadactorsQuality
+
+# === SCENARIO METADATA (OPTIONAL) ===
+entities: [ScenarioEntity]
+observables: [ScenarioObservable]
+kill_chain: [KillChainStage]
+notes: string
 
 # === DEPENDENCIES (OPTIONAL) ===
 dependencies:
@@ -163,11 +267,24 @@ dependencies:
 
 # === DEFAULTS (OPTIONAL) ===
 defaults:
-  echo:                     # Default echo configuration
+  echo:                       # Preferred default echo configuration
     delta_factor: float       # Time compression factor (default: 1.0)
-    base_time: string         # Base time reference (default: "earliest")
-    target_time: string       # Target time (default: "now-1h")
-  schema: string              # Default schema type
+    base_time: string         # Base time reference (default: "auto")
+    target_time: string       # Target time (default: "now")
+    prevent_future: bool
+    ceiling_time: string
+    no_shift: bool
+    shift_payload: bool
+  replay:                     # Legacy authored key, same shape as echo
+    delta_factor: float
+  schema: raw                 # Only supported schema
+  input:
+    format: string
+    timestamp_patterns: [DatasetTimestampPattern]
+    extensions: {name: JSONValue}
+  extensions: {name: JSONValue}
+
+extensions: {name: JSONValue}
 ```
 
 ---
@@ -415,9 +532,10 @@ Files included directly in the dataset directory (relative paths).
 bundled:
   - path: string              # Required: relative path from dataset root
     description: string       # Optional: what this file contains
-    format: string            # Optional: file format (default: "jsonl")
-    schema: string            # Optional: schema type
-    event_count: integer      # Optional: expected number of events
+    format: string            # Optional: auto, csv, jsonl, json, text, or xml
+    schema: raw               # Optional, raw is the only supported value
+    event_count: integer      # Optional: expected runtime replay count
+    sourcetype: string        # Optional timestamp registry key
 
     # Log source classification (optional)
     log_source:               # Optional: vendor-neutral classification
@@ -426,11 +544,13 @@ bundled:
       category: string        # Log category (e.g., Sysmon, Security)
       subcategory: string     # Optional subcategory
       event_ids: [int|str]    # Optional event IDs
+      extensions: {name: JSONValue}
 
     # Platform-specific metadata (optional, fully extensible)
     platforms:                # Optional: platform-specific metadata
       <platform_name>:        # Any platform name (elastic, chronicle, etc.)
         <key>: <value>        # Any structure (no validation)
+    extensions: {name: JSONValue}
 ```
 
 **Example:**
@@ -479,11 +599,14 @@ files:
 **path** (required)
 - Must be relative (no absolute paths)
 - Cannot contain `..` (no directory traversal)
+- Must resolve to a regular file inside the dataset root under `--check-files`
+- Symlinks that resolve outside the dataset root fail validation
 - Case-sensitive on Linux/macOS
 - Examples: `"logs/file.jsonl"`, `"data/network/zeek.log"`
 
-**format** (optional, default: "jsonl")
-- Valid values: `"jsonl"`, `"json"`, `"text"`, `"xml"`
+**format** (optional, default: `"auto"`)
+- Valid values: `"auto"`, `"csv"`, `"jsonl"`, `"json"`, `"text"`, `"xml"`
+- `"auto"` applies per-line runtime detection and does not infer from the filename
 - Use `"jsonl"` for newline-delimited JSON (most common)
 - Use `"json"` for single JSON array/object
 - Use `"text"` for plain text or CSV
@@ -495,15 +618,18 @@ files:
 - For `jsonl`, `json`, and `csv` files the event timestamp is read from a field and the record is re-serialized
 - For `text` and `xml` files whose registry entry marks the event timestamp `inplace: true` (for example `XmlWinEventLog`, `squid:access`, `MSExchange:MessageTracking`, `linux:syslog`), the file is shifted in place and kept byte for byte apart from its timestamps. This covers the Windows Event XML `SystemTime`, a Squid leading epoch, an Exchange leading ISO, and BSD syslog headers.
 - By default only the event timestamp moves. Run `echo --shift-payload` to also shift other timestamps found in the payload, by the same delta.
+- An omitted bundled sourcetype produces a validation warning and uses dataset or generic fallback timestamp rules
+- A present bundled sourcetype that is not in the timestamp registry produces a warning during offline validation
 
 **schema** (optional)
-- Valid values: `"raw"` (the default and only schema)
+- The only accepted value is `"raw"`; omission also selects raw runtime handling
 - `"raw"` - No transformation, original format
 
 **event_count** (optional)
-- Expected number of events/records in the file
-- Used for validation and statistics
-- Not enforced strictly (just informational)
+- Expected number of events emitted by the declared EchoLake input path
+- Must be a non-negative integer
+- `echolake validate-dataset PATH --check-counts` compares it with the current runtime replay count and fails on a mismatch
+- Missing counts produce warnings during count validation
 
 **log_source** (optional)
 - Vendor-neutral log source classification
@@ -520,7 +646,7 @@ files:
 **platforms** (optional)
 - Platform-specific metadata for SIEM ingestion
 - Fully extensible - any platform name and structure allowed
-- No validation - future-proof for new platforms
+- No schema validation inside the `platforms` map
 - Common platforms: chronicle, elastic, sentinel, qradar, sumo_logic
 - Each platform can have any structure (no restrictions)
 - **See:** [LOG_SOURCE_METADATA.md](LOG_SOURCE_METADATA.md) for platform examples
@@ -539,9 +665,11 @@ References to external files hosted on S3, HTTP, GCS, etc.
 references:
   - uri: string               # Required: URI to external file
     description: string       # Optional: what this file contains
-    format: string            # Optional: file format (default: "jsonl")
-    schema: string            # Optional: schema type
+    format: string            # Optional: auto, csv, jsonl, json, text, or xml
+    schema: raw               # Optional, raw is the only supported value
     checksum: string          # Optional but recommended: integrity check
+    sourcetype: string        # Optional timestamp registry key
+    event_count: integer      # Optional declared remote event count
 
     # Log source classification (optional)
     log_source:               # Optional: vendor-neutral classification
@@ -550,11 +678,13 @@ references:
       category: string        # Log category (e.g., Sysmon, Security)
       subcategory: string     # Optional subcategory
       event_ids: [int|str]    # Optional event IDs
+      extensions: {name: JSONValue}
 
     # Platform-specific metadata (optional, fully extensible)
     platforms:                # Optional: platform-specific metadata
       <platform_name>:        # Any platform name (elastic, chronicle, etc.)
         <key>: <value>        # Any structure (no validation)
+    extensions: {name: JSONValue}
 ```
 
 **Example:**
@@ -607,14 +737,15 @@ files:
 - Full URI to downloadable file
 - Will be downloaded and cached locally on first use
 
-**format** (optional, default: "jsonl")
-- Same as bundled files: `"jsonl"`, `"json"`, `"text"`, `"xml"`
+**format** (optional, default: `"auto"`)
+- Same as bundled files: `"auto"`, `"csv"`, `"jsonl"`, `"json"`, `"text"`, `"xml"`
 
 **sourcetype** (optional, recommended)
-- Same as bundled files (maps to the timestamp registry)
+- Uses the same syntax as bundled files
+- Offline validation does not check remote sourcetypes against the timestamp registry
 
 **schema** (optional)
-- Same as bundled files: `"raw"`
+- Same as bundled files: `"raw"` or omitted
 
 **checksum** (optional but recommended)
 - Format: `"algorithm:hexvalue"`
@@ -625,6 +756,10 @@ files:
 - Used to verify file integrity after download
 - Prevents corrupted or tampered files
 
+**event_count** (optional)
+- Declares the expected event count of the remote object
+- Offline validation records the value but does not download the object or check the count
+
 **log_source** (optional)
 - Same as bundled files - vendor-neutral log source classification
 - All subfields optional: vendor, product, category, subcategory, event_ids
@@ -634,6 +769,11 @@ files:
 - Same as bundled files - platform-specific metadata
 - Fully extensible, no validation
 - **See:** [LOG_SOURCE_METADATA.md](LOG_SOURCE_METADATA.md)
+
+Offline file validation emits one `remote_content_unchecked` warning when a
+manifest has references. It does not download remote objects, verify their
+checksums, count their records, or check their sourcetypes against the local
+timestamp registry.
 
 ---
 
@@ -718,9 +858,10 @@ Human-readable explanation of why this dependency is needed.
 
 **Type:** `object` (optional)
 
-Build and verification metadata for datasets produced by automated pipelines. Records ephemeral build-time details (VM identifiers, IPs, epoch timestamps) and pipeline integrity checks (event counts at source vs. destination).
-
-This section is optional. It is most useful for datasets generated by automated tooling where reproducibility and pipeline verification matter.
+Build, verification, and regeneration metadata for datasets produced by an
+automated pipeline. `build` and `verification` are required when `provenance` is
+present. Their nested fields are typed, and unknown keys must go in a declared
+`extensions` map.
 
 **Schema:**
 
@@ -728,6 +869,7 @@ This section is optional. It is most useful for datasets generated by automated 
 provenance:
   build:
     host:
+      hostname: string             # Optional build host name
       vmid: integer               # VM or instance identifier
       ip: string                  # IP address at build time
     timestamps:
@@ -735,13 +877,39 @@ provenance:
       end_epoch: integer          # Unix epoch when collection ended
     tool: string                  # Build tool or pipeline identifier
     notes: string                 # Free-text build notes
+    surface: string
+    ingest_time_collapsed_to_event_time: bool
+    filtered_orchestration_events: integer
+    window_utc:
+      start: string              # ISO 8601 with timezone
+      end: string
+    campaign_utc:
+      t0: string                 # ISO 8601 with timezone
+      t_end: string
+    translation:
+      from: string
+      to: string
+      reason: string
+    seed_detection: string
+    extensions: {name: JSONValue}
   verification:
     source_counts:
       <channel>: integer          # Event counts at the collection source
     dest_counts:
       <channel>: integer          # Event counts at the destination/storage
-    table: string                 # Destination table or index
-    host_filter: string           # Host filter applied during verification
+    signatures: {name: integer}
+    window_epoch: [integer, integer]
+    scaffolding_leaks: integer
+    lineage_clean: bool
+    technique_parent: [string]
+    total_events: integer
+    note: string
+    extensions: {name: JSONValue}
+  regenerated:
+    from: string
+    reason: string
+    total_events: integer
+  extensions: {name: JSONValue}
 ```
 
 **Example:**
@@ -749,6 +917,9 @@ provenance:
 ```yaml
 provenance:
   build:
+    host:
+      hostname: ART-WIN11
+      vmid: 204
     timestamps:
       start_epoch: 1773439154
       end_epoch: 1773439160
@@ -762,23 +933,78 @@ provenance:
       sysmon: 24
       security: 21
       powershell: 2452
+    window_epoch: [1773439154, 1773439160]
 ```
 
 **Field Details:**
 
-**build.host** (optional) — Ephemeral host identity at build time (VM ID, IP). These may differ from `environment.host` which describes the logical host identity.
+`build.host` may be a typed object or a legacy string. Epoch, UTC window, and
+campaign ranges must be ordered. UTC strings require an explicit timezone.
+Count maps and scalar counts must be non-negative. `verification.window_epoch`
+must contain exactly `[start, end]` in that order.
 
-**build.timestamps** (optional) — Unix epoch boundaries for the collection window. These define the exact time range queried to extract the dataset from the pipeline.
+When every bundled file declares `event_count`, `regenerated.total_events` must
+equal their sum. This invariant is checked while parsing the manifest.
 
-**build.tool** (optional) — Identifier for the build tool or pipeline that produced the dataset (e.g., `"art-pipeline v2"`, `"echolake-build"`).
+---
 
-**build.notes** (optional) — Free-text notes about the build (e.g., `"re-executed after Sysmon recovery"`).
+### badactors_quality
 
-**verification.source_counts / dest_counts** (optional) — Event counts by channel at the collection source and destination. When these match, the pipeline delivered all events without loss.
+**Type:** `object` (optional)
 
-**verification.table** (optional) — The table, index, or bucket used as the verification destination.
+Typed quality evidence for regenerated BadActors datasets. This block records
+hard gates, component scores, coverage, attribution, and best-of-N selection.
 
-**verification.host_filter** (optional) — The host filter applied when querying the destination for verification.
+```yaml
+badactors_quality:
+  Q: 0.9526
+  disqualified: false
+  gates:
+    scaffolding_hard_leaks_zero: true
+    no_future_events: true
+    lineage_clean: true
+    required_signatures_present: true
+    ingest_integrity: true
+  components:
+    coverage: 1.0
+    signal_completeness: 0.9
+    attribution: 0.9
+    purity: 0.9259
+    integrity: 1.0
+  weights:
+    coverage: 0.4
+    signal_completeness: 0.2
+    attribution: 0.2
+    purity: 0.1
+    integrity: 0.1
+  visibility:
+    coverage: 1.0
+    observable_primitives: 4
+    observed_primitives: 4
+    blind_primitives: []
+    missed_observable: []
+  attribution:
+    attributed: 90
+    technique_events: 100
+    ambient_filtered: 8
+    per_step: {step-1: 90}
+  spec: badactors-quality-v1
+  best_of_n:
+    runs: 2
+    selected: run-2
+    all_Q: {run-1: 0.91, run-2: 0.9526}
+    selection: highest-Q
+  extensions: {}
+```
+
+All component, weight, and quality values are between 0 and 1. BadActors quality
+v1 uses fixed weights of 0.4 coverage, 0.2 signal completeness, 0.2 attribution,
+0.1 purity, and 0.1 integrity. `disqualified` must equal the inverse of all hard
+gates passing. `Q` is zero for a disqualified run. Otherwise, it equals the
+weighted component score rounded to four decimal places. Coverage, attribution,
+purity, and integrity must agree with their source counts and gates. The selected
+Best-of-N score must equal `Q`. If every bundled file declares `event_count`,
+`attribution.technique_events` must equal their sum.
 
 ---
 
@@ -794,9 +1020,23 @@ Default configuration for replaying this dataset.
 defaults:
   echo:
     delta_factor: float       # Time compression/expansion (default: 1.0)
-    base_time: string         # Base time reference (default: "earliest")
-    target_time: string       # Target time (default: "now-1h")
-  schema: string              # Default schema for files without explicit schema
+    base_time: string         # Base time reference (default: "auto")
+    target_time: string       # Target time (default: "now")
+    prevent_future: bool      # Prevent shifted events from entering the future
+    ceiling_time: string      # Optional time ceiling, default "now"
+    no_shift: bool
+    shift_payload: bool
+  replay:                     # Legacy authored alias, same fields as echo
+    delta_factor: float
+  schema: raw                 # Only supported schema
+  input:
+    format: string
+    timestamp_patterns:
+      - field: string
+        format: string
+        is_base: bool
+    extensions: {name: JSONValue}
+  extensions: {name: JSONValue}
 ```
 
 **Example:**
@@ -805,8 +1045,8 @@ defaults:
 defaults:
   echo:
     delta_factor: 1.0         # Real-time (no compression)
-    base_time: "earliest"     # Use earliest log timestamp as base
-    target_time: "now-1h"     # Echo to 1 hour ago
+    base_time: "auto"         # Select the base timestamp automatically
+    target_time: "now"        # Echo to the current time
   schema: "raw"               # Default to raw schema
 ```
 
@@ -817,15 +1057,15 @@ defaults:
 - `1.0` - Real-time (1 minute of logs = 1 minute of echo)
 - `2.0` - 2x faster (1 minute of logs = 30 seconds of echo)
 - `0.5` - 2x slower (1 minute of logs = 2 minutes of echo)
-- `0.0` - All events at same time (collapse time)
+- Must be greater than zero
 
-**echo.base_time** (optional, default: "earliest")
+**echo.base_time** (optional, default: "auto")
 - Reference point for time manipulation
 - `"earliest"` - Use earliest timestamp in logs
 - `"latest"` - Use latest timestamp in logs
 - ISO8601 timestamp: `"2025-01-15T10:00:00Z"`
 
-**echo.target_time** (optional, default: "now-1h")
+**echo.target_time** (optional, default: "now")
 - Where to echo the logs to
 - `"now"` - Current time
 - `"now-1h"` - 1 hour ago
@@ -835,6 +1075,11 @@ defaults:
 **schema** (optional)
 - Default schema for files that don't specify one
 - Valid values: `"raw"`
+
+`defaults.replay` remains accepted for older manifests. If both `echo` and
+`replay` are present, they must be equal. Parsing and writing preserve the key
+that was authored. Runtime resolution reads `effective_echo`, which prefers
+`echo` and otherwise uses `replay`.
 
 ---
 
@@ -1062,50 +1307,46 @@ files:
 
 ### Automatic Validation
 
-All datasets are validated when loaded using Pydantic models. Common validation errors:
+Every load validates the typed manifest contract. This includes:
 
-#### Name Validation
-- ✅ `"my-dataset"` - lowercase, hyphens
-- ❌ `"My Dataset"` - spaces, capitals
-- ❌ `"my_dataset"` - underscores
-- ❌ `""` - empty string
+- `manifest_version`, semantic dataset versions, URI schemes, formats, checksums, and raw-only schemas
+- strict rejection of unknown fields outside declared `extensions`, `properties`, and free-form maps
+- relative portable syntax for bundled paths, Attack Flow paths, and local rule references
+- uniqueness of bundled paths, reference URIs, dependencies, and scenario handles
+- ordered metadata, provenance, observable, and kill-chain timestamps
+- scenario references and MITRE ATT&CK technique declarations
+- non-negative counts and the provenance and BadActors cross-field invariants described above
 
-#### Version Validation
-- ✅ `"1.0.0"` - valid semver
-- ✅ `"15.2.3"` - valid semver
-- ❌ `"1.0"` - missing patch version
-- ❌ `"v1.0.0"` - 'v' prefix not allowed
-- ❌ `"latest"` - not a version number
+Use the CLI for checks that require the dataset directory:
 
-#### Path Validation (bundled files)
-- ✅ `"logs/file.jsonl"` - relative path
-- ✅ `"data/subfolder/log.json"` - nested path
-- ❌ `"/absolute/path"` - absolute paths not allowed
-- ❌ `"../escape"` - directory traversal not allowed
+```bash
+# Parse and validate the manifest contract
+echolake validate-dataset ./my-dataset
 
-#### URI Validation (references)
-- ✅ `"s3://bucket/file.jsonl"`
-- ✅ `"https://example.com/data.json"`
-- ✅ `"gs://gcp-bucket/logs.jsonl"`
-- ❌ `"file:///local/path"` - file:// not supported
-- ❌ `"/path/to/file"` - must have scheme
+# Also resolve local files, enforce containment, and report bundled sourcetype warnings
+echolake validate-dataset ./my-dataset --check-files
 
-#### Format Validation
-- ✅ `"jsonl"`, `"json"`, `"text"`, `"xml"`
-- ❌ `"csv"` - not supported (use "text")
-- ❌ `"parquet"` - not supported
+# Run file checks and compare every declared bundled event_count
+echolake validate-dataset ./my-dataset --check-counts
+```
 
-#### Checksum Validation
-- ✅ `"sha256:a1b2c3..."` - algorithm:value format
-- ✅ `"md5:1234567890abcdef"`
-- ❌ `"a1b2c3"` - missing algorithm
-- ❌ `"sha1:..."` - sha1 not in allowed list
+`--check-counts` implies file checks. Counts follow the current EchoLake replay
+path for the declared format. JSON and JSONL count object records only. CSV
+counts logical data rows after the header, including quoted multiline rows as
+one event. Text and `auto` follow their runtime line parsers, and `auto` does not
+infer a format from the filename. XML follows the XML parser, while Windows
+Event XML handled in place counts its runtime event elements. Gzip-compressed
+inputs are supported. Malformed structured input fails count validation.
 
-#### MITRE Technique ID Validation
-- ✅ `"T1078"` - starts with T
-- ✅ `"T1003.001"` - sub-technique
-- ❌ `"1078"` - missing T prefix
-- ❌ `"TA0001"` - tactics not techniques
+The offline validator checks bundled files, the Attack Flow file, and local
+observable rule files. Resolved paths must remain under the dataset root and
+must name regular files. It does not use the network. Remote content, remote
+checksums, remote counts, external rule contents, and remote timestamp registry
+membership remain unchecked and produce warnings where applicable.
+
+Supported formats are `auto`, `csv`, `jsonl`, `json`, `text`, and `xml`.
+Supported reference schemes are `s3://`, `gs://`, `http://`, `https://`, and
+`azure://`. Checksums use `sha256:`, `sha512:`, or `md5:` prefixes.
 
 ---
 
@@ -1544,6 +1785,9 @@ Use when:
 
 ## Related Documentation
 
+- [Dataset Manifest Migration](DATASET_MANIFEST_MIGRATION.md) - Moving existing manifests to contract 1.0.0
+- [Collection Environment](COLLECTION_ENVIRONMENT.md) - Typed environment fields and extension boundaries
+- [Log Source Metadata](LOG_SOURCE_METADATA.md) - Sourcetype, log source, and platform metadata
 - [Time Expressions](TIME_EXPRESSIONS.md) - Time expression syntax for replay
 - [Dry Run Mode](DRY_RUN_MODE.md) - Testing datasets without writing
 - [Timestamp Manipulation](TIMESTAMP_MANIPULATION.md) - How time shifting works
@@ -1554,7 +1798,8 @@ Use when:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2026-01-28 | Initial comprehensive documentation |
+| 1.0.0 | 2026-11-01 | Documented the strict, lossless manifest contract and offline validation |
+| 0.9.0 | 2026-01-28 | Initial comprehensive documentation |
 
 ---
 
@@ -1574,6 +1819,9 @@ from them, so the manifest is the single source of truth.
 **entities** (optional). The cast of the scenario. Each entry has a local `id`
 handle, a STIX 2.1 `type`, and the properties STIX defines for that type, which
 are passed through and validated by the STIX library at build time.
+
+The manifest model exposes common STIX fields directly. Put additional STIX
+fields in the entry's `properties` map. Unknown direct fields are rejected.
 
 - Hosts are `infrastructure` (STIX has no host type) with `infrastructure_types`
   from the infrastructure-type open vocabulary (`workstation`, `control-system`,
@@ -1599,6 +1847,9 @@ canonical deterministic identifier, so the same IP or hash has the same id in
 every dataset. Model an executable by its `file` name rather than as a
 `process`, since process identifiers are never stable in STIX.
 
+As with entities, common fields are typed directly and additional STIX fields
+belong in `properties`.
+
 Mark an indicator of compromise with `indicator_types` (STIX indicator-type
 vocabulary: `malicious-activity`, `anomalous-activity`, `compromised`, `benign`,
 `attribution`, `unknown`), `kill_chain_phases` (ATT&CK tactic slugs),
@@ -1617,7 +1868,7 @@ indicator object. Detection rules are never inlined into the bundle. A
 manifest note and is dropped from the Attack Flow output; ship the rule under
 `rules/sigma/` and reference it with `rule`.
 
-**kill_chain** (optional, requires entities). The ordered stages. Each stage has
+**kill_chain** (optional, requires entities and `metadata.attack_flow`). The ordered stages. Each stage has
 an `id` (`S0`, `S1`, ...), `name`, `description`, an ATT&CK `tactic` slug, one
 or more `techniques`, the entity handles involved (`assets`), the observable
 handles that evidence it (`observables`), and `execution_start` /
@@ -1625,6 +1876,22 @@ handles that evidence it (`observables`), and `execution_start` /
 following stages explicitly.
 
 ```yaml
+manifest_version: "1.0.0"
+metadata:
+  name: example-attack-flow
+  version: "1.0.0"
+  description: Example multi-stage scenario
+  mitre_attack:
+    techniques:
+      - id: T1566
+        name: Phishing
+        tactics: [initial-access]
+      - id: T1071.001
+        name: Web Protocols
+        tactics: [command-and-control]
+    tactics: [initial-access, command-and-control]
+  attack_flow:
+    path: attack_flow.json
 entities:
   - id: ws-01
     type: infrastructure
@@ -1667,7 +1934,7 @@ kill_chain:
 
 Validation checks that every handle resolves and ids are unique. Build the
 flow with `echolake build-attack-flow <dataset-dir>`; it writes the bundle to
-`metadata.attack_flow.path` (default `attack_flow.json`) and validates it when
+`metadata.attack_flow.path` and validates it when
 the optional `attack-flow` package is installed. In the bundle: each entity
 becomes an `attack-asset` whose `object_ref` points at its STIX object; each
 stage becomes one `attack-action` per technique, chained with `effect_refs`,

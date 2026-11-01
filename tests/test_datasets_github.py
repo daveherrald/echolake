@@ -154,6 +154,7 @@ files:
         assert resolved_version == "v1.0.0"
         assert cache_path.exists()
         assert (cache_path / "dataset.yaml").exists()
+        assert (cache_path / "dataset.yaml").read_text() == manifest_yaml
         assert (cache_path / "logs" / "test.jsonl").exists()
 
 
