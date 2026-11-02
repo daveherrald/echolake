@@ -8,15 +8,17 @@ EchoLake is a Python-based tool for replaying security logs and events into SIEM
 - **Flexible Time Expressions**: Relative time expressions (`now-2h`, `earliest+1d`, `latest-30m`)
 - **Dry-Run Mode with Visualization**: Preview timeline and event distribution before writing output
 - **Multiple Input Sources**: Local filesystem, AWS S3, Google Cloud Storage, Azure Blob Storage
-- **Multiple Formats**: JSON, JSONL, plain text (XML support planned)
+- **Multiple Formats**: JSON, JSONL, CSV, plain text, Windows Event XML
 - **Native Log Replay**: Preserves each log in the shape its source produced
 - **Cloud Output**: Write to S3, GCS, or Azure Blob Storage
 - **Dual Interface**: CLI tool and Python library (Config + EchoEngine)
 
 ## Installation
 
+The package is not published on PyPI. Install from the repository:
+
 ```bash
-pip install echolake
+pip install git+https://github.com/daveherrald/echolake.git
 ```
 
 For development:
@@ -73,7 +75,23 @@ config = Config.from_file("echolake.yaml")
 engine = EchoEngine(config)
 engine.setup()
 stats = engine.run()
-print(f"Processed {stats.events_written} events")
+print(f"Processed {stats.event_count} events")
+```
+
+For notebook-style use, the `Replay` class offers a fluent API over the same
+engine, with path schemes auto-detected (local, S3, GCS, DBFS):
+
+```python
+from echolake import Replay
+
+stats = (
+    Replay()
+    .input_source("./logs", format="jsonl", schema="raw")
+    .output_destination("./replayed", format="jsonl")
+    .set_timestamp_options(delta_factor=1.0, base_time="earliest", target_time="now-2h")
+    .run()
+)
+print(f"Replayed {stats.event_count} events")
 ```
 
 ## Configuration
@@ -178,14 +196,14 @@ mypy src/
 - ✅ Core replay engine
 - ✅ Cloud bucket outputs (S3, GCS, Azure)
 - ✅ JSONL format support
+- ✅ Windows Event XML format support
 - ✅ Raw schema support
 - ✅ CLI interface
-- ✅ Python library interface (Config + EchoEngine)
+- ✅ Python library interface (Config + EchoEngine, plus the fluent Replay API)
 - ✅ Relative time expressions
 
 ### Future Phases
 - API outputs (Chronicle, custom HTTP)
-- XML format support
 - Extraction from Delta tables
 - Custom schema definitions
 - Multi-threaded processing
