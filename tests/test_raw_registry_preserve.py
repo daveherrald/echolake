@@ -26,10 +26,10 @@ def test_vpcflow_json_keeps_integer_epoch_seconds():
 
 def test_github_audit_keeps_integer_epoch_millis():
     out = _shift(
-        {"timestamp": 1790000000123, "created_at": 1790000000123, "expires_at": 1790600000123},
+        {"@timestamp": 1790000000123, "created_at": 1790000000123, "expires_at": 1790600000123},
         "github:audit",
     )
-    for field, original in (("timestamp", 1790000000123), ("created_at", 1790000000123),
+    for field, original in (("@timestamp", 1790000000123), ("created_at", 1790000000123),
                             ("expires_at", 1790600000123)):
         assert isinstance(out[field], int)
         assert out[field] == original + DELTA_MS
@@ -58,12 +58,9 @@ def test_crowdstrike_fdr_audit_iso_timestamp_and_millis():
     assert out["ActionTimestamp"] == str(1790000000000 + DELTA_MS)
 
 
-@pytest.mark.parametrize("vector_ts", [1790000000, "2026-09-21T12:00:00.123456789Z"])
-def test_linux_secure_fluentbit_shifts_line_in_place(vector_ts):
+def test_linux_secure_shifts_raw_line_in_place():
     line = "2026-09-21T12:00:00.123456+00:00 host-a sshd-session[1]: Connection closed"
-    out = _shift({"message": line, "timestamp": vector_ts, "host": "host-a"}, "linux_secure:fluentbit")
-    assert out["message"] == (
+    out = _shift({"line": line}, "linux_secure")
+    assert out["line"] == (
         "2026-10-21T13:02:03.579456+00:00 host-a sshd-session[1]: Connection closed"
     )
-    assert type(out["timestamp"]) is type(vector_ts)
-    assert out["host"] == "host-a"

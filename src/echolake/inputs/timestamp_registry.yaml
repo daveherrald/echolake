@@ -269,9 +269,9 @@ zscalernss-web:
     preserve_format: true
 
 # === GitHub ===
-# GitHub audit log stream (epoch-ms integers)
+# GitHub audit log stream, audit-streaming shape (@timestamp, epoch-ms integers)
 "github:audit":
-  - field: timestamp
+  - field: "@timestamp"
     format: unix_millis
     is_base: true
     preserve_format: true
@@ -289,19 +289,14 @@ zscalernss-web:
     format: unix_seconds
     is_base: true
 
-# auth.log lines shipped by Vector: the syslog line is in `message` (RFC3339
-# with microseconds); Vector's own `timestamp` is ISO8601 or epoch seconds.
-"linux_secure:fluentbit":
-  - field: message
-    regex: '^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})'
+# auth.log lines as raw text, carrying a shipper-normalized RFC3339 timestamp
+# at line start. Shifted in place; the line is byte-faithful otherwise.
+linux_secure:
+  - field: line
+    regex: '^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2})'
     format: iso8601
     is_base: true
-  - field: timestamp
-    format: unix_seconds
-    preserve_format: true
-  - field: timestamp
-    format: iso8601
-    preserve_format: true
+    inplace: true
 
 syslog:
   # Generic syslog - try embedded ISO timestamp first
