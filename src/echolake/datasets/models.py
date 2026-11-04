@@ -1325,6 +1325,32 @@ class KillChainStage(ManifestModel):
         return self
 
 
+CASE_DISPOSITIONS = {"true-positive", "benign-positive", "false-positive"}
+
+
+class ScenarioCase(ManifestModel):
+    """One eval case: an entry detection paired with its expected verdict."""
+
+    id: str = Field(..., description="Case handle, e.g. cloud-exfil-entry")
+    name: str = Field(..., description="Short case name")
+    rule: str = Field(..., description="Path or URL to the detection rule that seeds the case; usually the dataset's entry-point Sigma rule")
+    disposition: str = Field(..., description="Expected disposition: true-positive, benign-positive, or false-positive")
+    benign_explanations: List[str] = Field(default_factory=list, description="Defensible-but-wrong conclusions with their reasons; distractor ground truth for judging")
+    notes: Optional[str] = None
+
+    @field_validator("id")
+    @classmethod
+    def _v_id(cls, v: str) -> str:
+        return _check_handle(v)
+
+    @field_validator("disposition")
+    @classmethod
+    def _v_disposition(cls, v: str) -> str:
+        if v not in CASE_DISPOSITIONS:
+            raise ValueError(f"disposition must be one of {sorted(CASE_DISPOSITIONS)}: {v!r}")
+        return v
+
+
 class DatasetManifest(ManifestModel):
     """Complete dataset manifest (dataset.yaml)."""
 
@@ -1339,6 +1365,7 @@ class DatasetManifest(ManifestModel):
     entities: List[ScenarioEntity] = Field(default_factory=list, description="Scenario entities in STIX 2.1 vocabulary")
     observables: List[ScenarioObservable] = Field(default_factory=list, description="Observables and indicators present in the data")
     kill_chain: List[KillChainStage] = Field(default_factory=list, description="Ordered attack stages; source of the Attack Flow actions")
+    cases: List[ScenarioCase] = Field(default_factory=list, description="Eval cases pairing entry detection rules with expected dispositions and benign explanations")
     notes: Optional[str] = None
     extensions: Dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -1348,7 +1375,8 @@ class DatasetManifest(ManifestModel):
         ent = [e.id for e in self.entities]
         obs = [o.id for o in self.observables]
         stg = [k.id for k in self.kill_chain]
-        for label, ids in (("entities", ent), ("observables", obs), ("kill_chain", stg)):
+        cse = [c.id for c in self.cases]
+        for label, ids in (("entities", ent), ("observables", obs), ("kill_chain", stg), ("cases", cse)):
             dup = {x for x in ids if ids.count(x) > 1}
             if dup:
                 raise ValueError(f"duplicate {label} ids: {sorted(dup)}")

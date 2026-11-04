@@ -462,3 +462,80 @@ def test_file_reference_sourcetype_optional():
     """Test sourcetype field defaults to None on FileReference."""
     fr = FileReference(uri="s3://bucket/test.csv")
     assert fr.sourcetype is None
+
+
+def _manifest_dict_with_cases(cases):
+    """Load the fixture manifest as a dict and attach a cases section."""
+    import yaml
+
+    fixture = Path(__file__).parent / "fixtures" / "sample-dataset" / "dataset.yaml"
+    data = yaml.safe_load(fixture.read_text())
+    if cases is not None:
+        data["cases"] = cases
+    return DatasetManifest.model_validate(data)
+
+
+def test_cases_default_empty():
+    """A manifest without a cases section validates with an empty list."""
+    manifest = _manifest_dict_with_cases(None)
+    assert manifest.cases == []
+
+
+def test_cases_section_parses():
+    """A valid cases section round-trips with disposition and explanations."""
+    manifest = _manifest_dict_with_cases([
+        {
+            "id": "entry-case",
+            "name": "Entry-point alert",
+            "rule": "https://example.com/repo/rules/sigma/entry.yml",
+            "disposition": "true-positive",
+            "benign_explanations": [
+                "A test credential intentionally committed to a repository."
+            ],
+        },
+    ])
+    assert len(manifest.cases) == 1
+    case = manifest.cases[0]
+    assert case.id == "entry-case"
+    assert case.disposition == "true-positive"
+    assert case.benign_explanations == [
+        "A test credential intentionally committed to a repository."
+    ]
+
+
+def test_cases_reject_bad_disposition():
+    """Dispositions outside the enum are rejected."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="disposition"):
+        _manifest_dict_with_cases([
+            {
+                "id": "entry-case",
+                "name": "Entry-point alert",
+                "rule": "https://example.com/repo/rules/sigma/entry.yml",
+                "disposition": "tp",
+            },
+        ])
+
+
+def test_cases_reject_duplicate_ids():
+    """Duplicate case ids are rejected by the manifest cross-validator."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="duplicate cases ids"):
+        _manifest_dict_with_cases([
+            {
+                "id": "entry-case",
+                "name": "Entry-point alert",
+                "rule": "https://example.com/repo/rules/sigma/one.yml",
+                "disposition": "true-positive",
+            },
+            {
+                "id": "entry-case",
+                "name": "Another entry case",
+                "rule": "https://example.com/repo/rules/sigma/two.yml",
+                "disposition": "benign-positive",
+            },
+        ])
