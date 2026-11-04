@@ -519,6 +519,21 @@ def test_cases_reject_bad_disposition():
         ])
 
 
+def test_cases_inconclusive_disposition():
+    """An inconclusive case parses: the supplied evidence supports no decisive verdict."""
+    manifest = _manifest_dict_with_cases([
+        {
+            "id": "entry-case",
+            "name": "Entry-point alert",
+            "rule": "https://example.com/repo/rules/sigma/entry.yml",
+            "disposition": "inconclusive",
+        },
+    ])
+    case = manifest.cases[0]
+    assert case.disposition == "inconclusive"
+    assert case.benign_explanations == []
+
+
 def test_cases_reject_duplicate_ids():
     """Duplicate case ids are rejected by the manifest cross-validator."""
     import pytest

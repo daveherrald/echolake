@@ -1325,7 +1325,7 @@ class KillChainStage(ManifestModel):
         return self
 
 
-CASE_DISPOSITIONS = {"true-positive", "benign-positive", "false-positive"}
+CASE_DISPOSITIONS = {"true-positive", "benign-positive", "false-positive", "inconclusive"}
 
 
 class ScenarioCase(ManifestModel):
@@ -1334,7 +1334,7 @@ class ScenarioCase(ManifestModel):
     id: str = Field(..., description="Case handle, e.g. cloud-exfil-entry")
     name: str = Field(..., description="Short case name")
     rule: str = Field(..., description="Path or URL to the detection rule that seeds the case; usually the dataset's entry-point Sigma rule")
-    disposition: str = Field(..., description="Expected disposition: true-positive, benign-positive, or false-positive")
+    disposition: str = Field(..., description="Expected disposition: true-positive, benign-positive, false-positive, or inconclusive (the supplied evidence does not support a decisive verdict)")
     benign_explanations: List[str] = Field(default_factory=list, description="Defensible-but-wrong conclusions with their reasons; distractor ground truth for judging")
     notes: Optional[str] = None
 
