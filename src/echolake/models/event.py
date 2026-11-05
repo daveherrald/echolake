@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 import json
+import re
 from ..utils.time import format_timestamp
 
 
@@ -111,7 +112,32 @@ class Event:
             return format_timestamp(new_ts, "dotnet_date")
 
         if fmt in ("iso8601", "rfc3339"):
-            return new_ts.isoformat()
+            if not isinstance(original, str):
+                return new_ts.isoformat()
+            # Round-trip the original's suffix style and precision: a 'Z'
+            # suffix stays 'Z' rather than becoming '+00:00', and a
+            # whole-second value stays whole rather than gaining microseconds.
+            out = new_ts.isoformat()
+            if original.endswith("Z"):
+                out = out.replace("+00:00", "Z")
+            if "." not in original:
+                # A whole-second field cannot carry a fractional shift, so it
+                # lands on the nearest second rather than truncating toward
+                # it, the same policy as whole-second unix fields above.
+                rounded = new_ts.replace(microsecond=0) + (
+                    timedelta(seconds=1) if new_ts.microsecond >= 500000 else timedelta()
+                )
+                out = rounded.isoformat()
+                if original.endswith("Z"):
+                    out = out.replace("+00:00", "Z")
+            else:
+                digits = len(original.split(".", 1)[1].split("+")[0].rstrip("Z"))
+                out = re.sub(
+                    r"\.(\d+)",
+                    lambda m: "." + m.group(1)[:digits].ljust(digits, "0"),
+                    out,
+                )
+            return out
 
         return format_timestamp(new_ts, fmt)
 

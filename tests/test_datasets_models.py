@@ -554,3 +554,12 @@ def test_cases_reject_duplicate_ids():
                 "disposition": "benign-positive",
             },
         ])
+
+
+def test_attack_tactics_include_v20_renames():
+    """v20 renamed TA0005 to Stealth and added TA0112 Defense Impairment; legacy slug stays."""
+    from echolake.datasets.models import ATTACK_TACTICS
+
+    assert ATTACK_TACTICS["stealth"] == "TA0005"
+    assert ATTACK_TACTICS["defense-impairment"] == "TA0112"
+    assert ATTACK_TACTICS["defense-evasion"] == "TA0005"

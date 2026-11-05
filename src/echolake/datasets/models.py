@@ -1090,6 +1090,9 @@ ATTACK_TACTICS = {
     "credential-access": "TA0006", "discovery": "TA0007",
     "lateral-movement": "TA0008", "collection": "TA0009",
     "command-and-control": "TA0011", "exfiltration": "TA0010", "impact": "TA0040",
+    # ATT&CK v20 renamed TA0005 (Defense Evasion) to Stealth and added TA0112
+    # (Defense Impairment). The legacy slug stays valid for existing manifests.
+    "stealth": "TA0005", "defense-impairment": "TA0112",
 }
 _HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 

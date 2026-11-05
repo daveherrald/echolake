@@ -53,8 +53,10 @@ WinEventLog:
   - field: eventTime
     format: iso8601
     is_base: true
+    preserve_format: true
   - field: time_dt
     format: iso8601
+    preserve_format: true
 
 "aws:asl":
   - field: time
@@ -268,6 +270,52 @@ zscalernss-web:
     format: unix_seconds
     preserve_format: true
 
+  # Sensor-event exports that merge the device record into each event (the
+  # upstream Splunk sourcetype crowdstrike:falcon:edr) carry the same fields
+  # plus a device_* snapshot and container timing; they translate to this
+  # sourcetype. ChangeTimeNs (epoch nanoseconds) has no registry format and is
+  # left to the optional payload scan.
+  - field: ChangeTimeWindowsFormat
+    format: unix_seconds
+    preserve_format: true
+  - field: InstallDate
+    format: unix_seconds
+    preserve_format: true
+  - field: OciContainerStartTime
+    format: unix_seconds
+    preserve_format: true
+  - field: OciContainerStopTime
+    format: unix_seconds
+    preserve_format: true
+  - field: device_agent_local_time
+    format: iso8601
+    preserve_format: true
+  - field: device_first_seen
+    format: iso8601
+    preserve_format: true
+  - field: device_last_seen
+    format: iso8601
+    preserve_format: true
+  - field: device_modified_timestamp
+    format: iso8601
+    preserve_format: true
+
+# === Kubernetes ===
+# Kubernetes API-server audit events (audit.k8s.io/v1); the echolake sourcetype
+# for this shape. EKS delivers the same records under the upstream Splunk
+# sourcetype aws:eks:audit, which packages translate to this name.
+# The event time is when the API server received the request; stageTimestamp
+# is when the event reached its stage. Timestamps inside requestObject and
+# responseObject are payload and move only with the optional payload scan.
+"kubernetes:audit":
+  - field: requestReceivedTimestamp
+    format: iso8601
+    is_base: true
+    preserve_format: true
+  - field: stageTimestamp
+    format: iso8601
+    preserve_format: true
+
 # === GitHub ===
 # GitHub audit log stream, audit-streaming shape (@timestamp, epoch-ms integers)
 "github:audit":
@@ -280,6 +328,15 @@ zscalernss-web:
     preserve_format: true
   - field: expires_at
     format: unix_millis
+    preserve_format: true
+
+  # Workflow-run records add ISO8601 started_at and completed_at; the upstream
+  # Splunk sourcetype github:cloud:audit translates to this sourcetype.
+  - field: started_at
+    format: iso8601
+    preserve_format: true
+  - field: completed_at
+    format: iso8601
     preserve_format: true
 
 # === Linux / Unix ===
