@@ -48,6 +48,8 @@ attack-flow = [
     "stix2>=3.0",
     "attack-flow @ git+https://github.com/center-for-threat-informed-defense/attack-flow.git",
 ]
+# Lakewatch entry alerts (`echolake create-lakewatch-alerts`); auth through Databricks CLI profiles.
+lakewatch = ["databricks-sdk>=0.30.0"]
 cloud = [
     "boto3>=1.28.0",
     "google-cloud-storage>=2.10.0",

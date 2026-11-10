@@ -541,6 +541,104 @@ def validate_set(
         raise typer.Exit(1)
 
 
+def _manifest_path(path: Path) -> Path:
+    manifest_path = path / "dataset.yaml" if path.is_dir() else path
+    if not manifest_path.exists():
+        console.print(f"[red]Error: Manifest file not found: {manifest_path}[/red]")
+        raise typer.Exit(1)
+    return manifest_path
+
+
+@app.command(name="render-alerts")
+def render_alerts_cmd(
+    path: Path = typer.Argument(..., help="Path to dataset directory or dataset.yaml file", exists=True),
+    readme: Optional[Path] = typer.Option(None, "--readme", help="README to update (default: README.md beside the manifest)"),
+    check: bool = typer.Option(False, "--check", help="Fail if the README's alert section is stale; write nothing"),
+):
+    """
+    Render the cases' alert specs into the README's entry-alert section (between
+    <!-- echolake:alerts:start --> and <!-- echolake:alerts:end -->, appended if absent).
+
+    Examples:
+        echolake render-alerts ./my-dataset/
+        echolake render-alerts ./my-dataset/ --check
+    """
+    from ..datasets.models import DatasetManifest
+    from ..lakewatch.alerts import render_alert_section, update_readme
+
+    manifest_path = _manifest_path(path)
+    manifest = DatasetManifest.from_file(manifest_path)
+    target = readme or manifest_path.parent / "README.md"
+    current = target.read_text() if target.exists() else ""
+    updated = update_readme(current, render_alert_section(manifest))
+    if check:
+        if updated != current:
+            console.print(f"[red]✗[/red] {target} alert section is stale; run echolake render-alerts")
+            raise typer.Exit(1)
+        console.print(f"[green]✓[/green] {target} alert section is current")
+        return
+    if updated == current:
+        console.print(f"[green]✓[/green] {target} already current")
+        return
+    target.write_text(updated)
+    n = sum(1 for c in manifest.cases if c.alert is not None)
+    console.print(f"[green]✓[/green] Wrote {n} entry alert(s) to {target}")
+
+
+@app.command(name="create-lakewatch-alerts")
+def create_lakewatch_alerts_cmd(
+    path: Path = typer.Argument(..., help="Path to dataset directory or dataset.yaml file", exists=True),
+    catalog: str = typer.Option(..., "--catalog", help="Lakewatch catalog the dataset is loaded into"),
+    warehouse_id: str = typer.Option(..., "--warehouse-id", help="SQL warehouse for the evidence query"),
+    schema: str = typer.Option("default", "--schema", help="Schema holding the dataset tables"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Databricks CLI profile (auth)"),
+    case: Optional[List[str]] = typer.Option(None, "--case", help="Limit to these case ids (repeatable)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run the evidence checks; create nothing"),
+    alert_url_base: Optional[str] = typer.Option(None, "--alert-url-base", help="Lakewatch alerts URL prefix, recorded as <base>/<seq_id>"),
+    manifest_table: Optional[str] = typer.Option(None, "--manifest-table", help="load_manifests table to record into"),
+    load_id: Optional[str] = typer.Option(None, "--load-id", help="load_manifests row to record into (requires --manifest-table)"),
+):
+    """
+    Create each case's entry alert in a Lakewatch catalog through the alert API.
+
+    For every case with an `alert` spec: run its evidence query, require the expected count
+    and every anchor, find or create the alert collection, and create the alert (skipped when
+    one with the same title already exists). No detection rule is created. Prints one JSON
+    record per case and, with --manifest-table/--load-id, merges them into
+    artifact.entry_alerts of that load_manifests row.
+
+    Examples:
+        echolake create-lakewatch-alerts ./my-dataset --catalog acme --warehouse-id abc123 --profile prod --dry-run
+    """
+    import json as _json
+    from ..datasets.models import DatasetManifest
+    from ..lakewatch.alerts import DatabricksLakewatchClient, create_case_alerts, record_in_load_manifest
+
+    manifest = DatasetManifest.from_file(_manifest_path(path))
+    if not any(c.alert for c in manifest.cases):
+        console.print("[yellow]No case in this manifest has an alert spec.[/yellow]")
+        raise typer.Exit(1)
+    if bool(manifest_table) != bool(load_id):
+        console.print("[red]--manifest-table and --load-id must be given together[/red]")
+        raise typer.Exit(1)
+    client = DatabricksLakewatchClient(profile, warehouse_id)
+    records = create_case_alerts(client, manifest, catalog, schema=schema, case_ids=case,
+                                 dry_run=dry_run, alert_url_base=alert_url_base)
+    print(_json.dumps(records, indent=1))
+    failed = [r for r in records if r["status"] == "failed"]
+    if manifest_table and load_id and not dry_run:
+        n = record_in_load_manifest(client, manifest_table, load_id, records)
+        console.print(f"[green]✓[/green] Recorded in {manifest_table} ({load_id})" if n
+                      else f"[red]✗[/red] load_id {load_id} not found in {manifest_table}")
+        if not n:
+            raise typer.Exit(1)
+    for r in records:
+        mark = "[red]✗[/red]" if r["status"] == "failed" else "[green]✓[/green]"
+        console.print(f"{mark} {r['case_id']}: {r['status']} {r.get('seq_id') or ''} {r.get('error') or ''}")
+    if failed:
+        raise typer.Exit(1)
+
+
 @app.command(name="build-attack-flow")
 def build_attack_flow_cmd(
     path: Path = typer.Argument(

@@ -1330,6 +1330,107 @@ class KillChainStage(ManifestModel):
 
 CASE_DISPOSITIONS = {"true-positive", "benign-positive", "false-positive", "inconclusive"}
 
+ALERT_SEVERITIES = {"Critical", "High", "Medium", "Low", "Informational"}
+ALERT_TEMPLATE_FIELDS = {"count", "first_seen", "last_seen"}
+_SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _check_alert_template(v: str, label: str) -> str:
+    """Allow only the evidence placeholders in alert text; reject stray braces."""
+    if not v or not v.strip():
+        raise ValueError(f"{label} must be non-empty")
+    names = set(re.findall(r"\{([^{}]*)\}", v))
+    unknown = names - ALERT_TEMPLATE_FIELDS
+    if unknown:
+        raise ValueError(
+            f"{label} uses unknown placeholder(s) {sorted(unknown)}; allowed: {sorted(ALERT_TEMPLATE_FIELDS)}"
+        )
+    stripped = re.sub(r"\{(?:count|first_seen|last_seen)\}", "", v)
+    if "{" in stripped or "}" in stripped:
+        raise ValueError(f"{label} has an unbalanced or nested brace")
+    return v
+
+
+class AlertEvidence(ManifestModel):
+    """The events an entry alert is about: the query that must match them in the loaded catalog.
+
+    A manual (API-created) alert carries no linked events, so this is the machine-checkable
+    statement of what the alert covers. The loader runs it before creating the alert and
+    refuses to create one when the evidence is missing or the count is off.
+    """
+
+    table: str = Field(..., description="Table name in the target catalog schema (e.g. zeek_conn)")
+    where: str = Field(..., description="Databricks SQL boolean predicate over that table selecting the alert's events; the SQL rendering of the case's Sigma rule")
+    time_column: str = Field(default="time", description="Event-time column used for first_seen / last_seen")
+    expected_count: int = Field(..., ge=1, description="Number of rows the predicate matches in a correct load")
+    count_tolerance: int = Field(default=0, ge=0, description="Allowed absolute deviation from expected_count")
+
+    @field_validator("table", "time_column")
+    @classmethod
+    def _v_identifier(cls, v: str) -> str:
+        if not _SQL_IDENTIFIER.match(v):
+            raise ValueError(f"must be a plain SQL identifier: {v!r}")
+        return v
+
+    @field_validator("where")
+    @classmethod
+    def _v_where(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("where must be non-empty")
+        if ";" in v:
+            raise ValueError("where must be a single predicate (no ';')")
+        return v
+
+
+class AlertSpec(ManifestModel):
+    """The entry alert for a case, created through the Lakewatch alert API by the loader.
+
+    Title and description are the alert's full content (there are no linked events), so they
+    must name the entities and pivot an analyst needs, and must not state the verdict.
+    ``{count}``, ``{first_seen}``, and ``{last_seen}`` are filled from the evidence query.
+    """
+
+    title: str = Field(..., description="Alert title; immutable once created")
+    description: str = Field(..., description="Alert body: behavior, entities, time, and investigative pivot; no verdict")
+    severity: str = Field(..., description="One of Critical, High, Medium, Low, Informational")
+    alert_type: Literal["SECURITY_ALERT"] = "SECURITY_ALERT"
+    alert_state: Literal["OPEN", "IN_PROGRESS"] = "OPEN"
+    collection: str = Field(default="triage_queue", description="Alert collection name in the target catalog schema")
+    anchors: List[str] = Field(default_factory=list, description="Strings (hosts, users, indicators) that must appear in the evidence rows")
+    annotations: Dict[str, str] = Field(default_factory=dict, description="Extra alert annotations; keep scenario and verdict words out")
+    evidence: AlertEvidence
+
+    @field_validator("title")
+    @classmethod
+    def _v_title(cls, v: str) -> str:
+        return _check_alert_template(v, "alert.title")
+
+    @field_validator("description")
+    @classmethod
+    def _v_description(cls, v: str) -> str:
+        return _check_alert_template(v, "alert.description")
+
+    @field_validator("severity")
+    @classmethod
+    def _v_severity(cls, v: str) -> str:
+        if v not in ALERT_SEVERITIES:
+            raise ValueError(f"severity must be one of {sorted(ALERT_SEVERITIES)}: {v!r}")
+        return v
+
+    @field_validator("collection")
+    @classmethod
+    def _v_collection(cls, v: str) -> str:
+        if not _SQL_IDENTIFIER.match(v):
+            raise ValueError(f"collection must be a plain identifier: {v!r}")
+        return v
+
+    @field_validator("anchors")
+    @classmethod
+    def _v_anchors(cls, v: List[str]) -> List[str]:
+        if any(not a or not a.strip() for a in v):
+            raise ValueError("anchors must be non-empty strings")
+        return v
+
 
 class ScenarioCase(ManifestModel):
     """One eval case: an entry detection paired with its expected verdict."""
@@ -1340,6 +1441,7 @@ class ScenarioCase(ManifestModel):
     disposition: str = Field(..., description="Expected disposition: true-positive, benign-positive, false-positive, or inconclusive (the supplied evidence does not support a decisive verdict)")
     benign_explanations: List[str] = Field(default_factory=list, description="Defensible-but-wrong conclusions with their reasons; distractor ground truth for judging")
     notes: Optional[str] = None
+    alert: Optional[AlertSpec] = Field(default=None, description="Entry alert created through the Lakewatch alert API by `echolake create-lakewatch-alerts`; rendered into the README by `echolake render-alerts`")
 
     @field_validator("id")
     @classmethod
