@@ -219,7 +219,11 @@ class DatabricksLakewatchClient:
         self.warehouse_id = warehouse_id
 
     def _do(self, method: str, path: str, query: Optional[dict] = None, body: Optional[dict] = None) -> Dict[str, Any]:
-        return self.w.api_client.do(method, path, query=query, body=body) or {}
+        # Unified (account-level) hosts route a raw request to a workspace only when it names the
+        # workspace; without the header the Lakewatch API answers 503 TEMPORARILY_UNAVAILABLE,
+        # which the SDK retries for minutes. The SDK's typed services add it themselves.
+        headers = {"X-Databricks-Org-Id": str(self.w.config.workspace_id)} if getattr(self.w.config, "workspace_id", None) else None
+        return self.w.api_client.do(method, path, query=query, body=body, headers=headers) or {}
 
     def sql(self, statement: str) -> List[Dict[str, Any]]:
         r = self.w.statement_execution.execute_statement(warehouse_id=self.warehouse_id, statement=statement,
